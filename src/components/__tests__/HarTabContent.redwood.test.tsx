@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import HarTabContent from '../HarTabContent';
 
-const { getHarDataMock, mockHarState } = vi.hoisted(() => {
+const { getHarDataMock, mockHarState, requestFlowDiagramMock } = vi.hoisted(() => {
   const sampleHarFile = {
     log: {
       version: '1.2',
@@ -44,12 +44,48 @@ const { getHarDataMock, mockHarState } = vi.hoisted(() => {
             receive: 15,
           },
         },
+        {
+          startedDateTime: '2024-01-15T10:30:01.000Z',
+          time: 125,
+          request: {
+            method: 'GET',
+            url: 'https://idcs.example.com/favicon.ico',
+            httpVersion: 'HTTP/1.1',
+            cookies: [],
+            headers: [{ name: 'Accept', value: 'image/x-icon' }],
+            queryString: [],
+            headersSize: 40,
+            bodySize: 0,
+          },
+          response: {
+            status: 401,
+            statusText: 'Unauthorized',
+            httpVersion: 'HTTP/1.1',
+            cookies: [],
+            headers: [{ name: 'Content-Type', value: 'image/x-icon' }],
+            content: { size: 546, mimeType: 'image/x-icon' },
+            redirectURL: '',
+            headersSize: 60,
+            bodySize: 546,
+          },
+          cache: {},
+          timings: {
+            blocked: 5,
+            dns: 8,
+            connect: 12,
+            ssl: 0,
+            send: 3,
+            wait: 80,
+            receive: 17,
+          },
+        },
       ],
     },
   };
 
   return {
     getHarDataMock: vi.fn().mockResolvedValue(sampleHarFile),
+    requestFlowDiagramMock: vi.fn(),
     mockHarState: {
       harData: sampleHarFile,
       filteredEntries: sampleHarFile.log.entries,
@@ -109,7 +145,10 @@ vi.mock('../FloatingAiChat', () => ({
 }));
 
 vi.mock('../RequestFlowDiagram', () => ({
-  default: () => <div>Journey map mock</div>,
+  default: (props: any) => {
+    requestFlowDiagramMock(props);
+    return <div>Journey map mock</div>;
+  },
 }));
 
 vi.mock('../RequestFlowGraphView', () => ({
@@ -134,7 +173,9 @@ describe('HarTabContent Redwood theme smoke test', () => {
     document.documentElement.style.colorScheme = 'light';
     window.localStorage.setItem('theme', 'redwood');
     getHarDataMock.mockClear();
+    mockHarState.filteredEntries = mockHarState.harData.log.entries;
     mockHarState.loadHarData.mockClear();
+    requestFlowDiagramMock.mockClear();
   });
 
   it('renders the HAR analyzer shell in Redwood mode', async () => {
@@ -165,7 +206,7 @@ describe('HarTabContent Redwood theme smoke test', () => {
     });
   });
 
-  it('renders a request flow view toggle with journey, scattered, and system trace views', async () => {
+  it('renders a request flow view toggle with journey and scattered views', async () => {
     const user = userEvent.setup();
 
     render(
@@ -194,31 +235,54 @@ describe('HarTabContent Redwood theme smoke test', () => {
 
     const journeyMapToggle = screen.getByRole('radio', { name: /journey map/i });
     const nodeGraphToggle = screen.getByRole('radio', { name: /scattered view/i });
-    const traceToggle = screen.getByRole('radio', { name: /system trace/i });
 
     expect(journeyMapToggle).toHaveAttribute('aria-checked', 'false');
     expect(nodeGraphToggle).toHaveAttribute('aria-checked', 'true');
-    expect(traceToggle).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('Scattered view mock')).toBeInTheDocument();
     expect(screen.queryByText('Journey map mock')).not.toBeInTheDocument();
-    expect(screen.queryByText('System trace mock')).not.toBeInTheDocument();
-
-    await user.click(traceToggle);
-
-    expect(journeyMapToggle).toHaveAttribute('aria-checked', 'false');
-    expect(nodeGraphToggle).toHaveAttribute('aria-checked', 'false');
-    expect(traceToggle).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByText('System trace mock')).toBeInTheDocument();
-    expect(screen.queryByText('Scattered view mock')).not.toBeInTheDocument();
 
     await user.click(journeyMapToggle);
 
     expect(journeyMapToggle).toHaveAttribute('aria-checked', 'true');
     expect(nodeGraphToggle).toHaveAttribute('aria-checked', 'false');
-    expect(traceToggle).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('Journey map mock')).toBeInTheDocument();
     expect(screen.queryByText('Scattered view mock')).not.toBeInTheDocument();
-    expect(screen.queryByText('System trace mock')).not.toBeInTheDocument();
     expect(document.documentElement.dataset.theme).toBe('redwood');
+  });
+
+  it('passes full HAR entries to the journey map while preserving the analyzer-filtered visible subset', async () => {
+    const user = userEvent.setup();
+    const allEntries = mockHarState.harData.log.entries;
+    mockHarState.filteredEntries = [allEntries[1]];
+
+    render(
+      <HarTabContent
+        tabId="tab-1"
+        fileId="file-1"
+        fileName="session.har"
+        isActive
+        backendUrl="http://localhost:4000"
+        recentFiles={[]}
+        onAddNewTab={vi.fn()}
+        onLoadRecentNewTab={vi.fn()}
+        onClearRecent={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getHarDataMock).toHaveBeenCalledWith('file-1');
+      expect(mockHarState.loadHarData).toHaveBeenCalled();
+    });
+
+    await user.click(screen.getByRole('button', { name: /request flow/i }));
+    await user.click(screen.getByRole('radio', { name: /journey map/i }));
+
+    expect(requestFlowDiagramMock).toHaveBeenCalled();
+    expect(requestFlowDiagramMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        entries: allEntries,
+        visibleEntries: [allEntries[1]],
+      })
+    );
   });
 });

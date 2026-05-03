@@ -805,7 +805,8 @@ const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
   const warnings = findings.filter((f) => f.level === 'warn');
   const insights = findings.filter((f) => f.level === 'info');
   const passed = findings.filter((f) => f.level === 'ok');
-  const slowTop = [...harData.log.entries].sort((a, b) => (b.time ?? 0) - (a.time ?? 0)).slice(0, 5);
+  const analyticsItemLimit = 5;
+  const slowTop = [...harData.log.entries].sort((a, b) => (b.time ?? 0) - (a.time ?? 0)).slice(0, analyticsItemLimit);
   const maxTime = Math.max(slowTop[0]?.time ?? 1, 1);
 
   const domainMap = new Map<string, { count: number; bytes: number; time: number; errs: number }>();
@@ -823,7 +824,7 @@ const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
   const domains = [...domainMap.entries()]
     .map(([host, value]) => ({ host, ...value, avg: value.time / Math.max(value.count, 1) }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 6);
+    .slice(0, analyticsItemLimit);
 
   const kpiItems = [
     {
@@ -881,6 +882,104 @@ const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
   const scoreRadius = 76;
   const scoreCircumference = 2 * Math.PI * scoreRadius;
   const scoreOffset = scoreCircumference - (score / 100) * scoreCircumference;
+  const priorityAnalytics = (
+    <div className="scorecard-analytics-grid is-reference is-balanced">
+      <section className="scorecard-panel-card">
+        <header className="scorecard-panel-header">
+          <div>
+            <h3>Top slow requests</h3>
+            <p>The most time-consuming calls in this session, ranked by duration.</p>
+          </div>
+        </header>
+        <div className="scorecard-section-divider" />
+
+        <div className="scorecard-panel-list">
+          {slowTop.map((entry) => {
+            const time = entry.time ?? 0;
+            const badgeLabel = entry.response.status >= 400 ? 'Error' : entry.response.status >= 300 ? 'Redirect' : 'Observed';
+            const badgeTone = entry.response.status >= 400 ? 'danger' : 'info';
+            const barWidth = `${Math.max(10, Math.round((time / maxTime) * 100))}%`;
+
+            return (
+              <article key={`${entry.request.method}-${entry.request.url}-${entry.startedDateTime}`} className="scorecard-traffic-card">
+                <div className="scorecard-traffic-head">
+                  <strong title={entry.request.url}>{getPathLabel(entry.request.url)}</strong>
+                  <div className="scorecard-traffic-metrics">
+                    <span className="scorecard-traffic-time">{fmtT(time)}</span>
+                    <span className={`scorecard-inline-pill tone-${badgeTone}`}>{badgeLabel}</span>
+                  </div>
+                </div>
+                <span className="scorecard-traffic-subtitle">{fhost(entry.request.url)}</span>
+                <div className="scorecard-traffic-bar">
+                  <div
+                    className={`scorecard-traffic-bar-fill tone-${time > 1400 ? 'warning' : 'info'}`}
+                    style={{ width: barWidth } as React.CSSProperties}
+                  />
+                </div>
+                <div className="scorecard-domain-grid scorecard-traffic-grid">
+                  <div>
+                    <span>STATUS</span>
+                    <strong>HTTP {entry.response.status || 0}</strong>
+                  </div>
+                  <div>
+                    <span>TTFB</span>
+                    <strong>{fmtT(entry.timings.wait ?? 0)}</strong>
+                  </div>
+                  <div>
+                    <span>TRANSFER</span>
+                    <strong>{fmtB(getTransferSize(entry))}</strong>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="scorecard-panel-card">
+        <header className="scorecard-panel-header">
+          <div>
+            <h3>Domain Analysis</h3>
+            <p>Where traffic volume and latency are concentrated across hosts.</p>
+          </div>
+          <span className="scorecard-header-pill tone-info">{domains.length} hosts</span>
+        </header>
+        <div className="scorecard-section-divider" />
+
+        <div className="scorecard-panel-list">
+          {domains.map((domain) => (
+            <article key={domain.host} className="scorecard-domain-card">
+              <div className="scorecard-domain-card-head">
+                <strong title={domain.host}>{domain.host}</strong>
+                <span>{domain.count} req</span>
+              </div>
+              <span className="scorecard-domain-subtitle">{fmtB(domain.bytes)} transferred</span>
+              <div className="scorecard-traffic-bar">
+                <div
+                  className="scorecard-traffic-bar-fill tone-info"
+                  style={{ width: `${Math.max(10, Math.round((domain.time / maxDomainTime) * 100))}%` } as React.CSSProperties}
+                />
+              </div>
+              <div className="scorecard-domain-grid">
+                <div>
+                  <span>AVG</span>
+                  <strong>{fmtT(domain.avg)}</strong>
+                </div>
+                <div>
+                  <span>ERRORS</span>
+                  <strong>{domain.errs}</strong>
+                </div>
+                <div>
+                  <span>TOTAL TIME</span>
+                  <strong>{fmtT(domain.time)}</strong>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
 
   return (
     <section className="scorecard-dashboard">
@@ -1072,6 +1171,8 @@ const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
         </div>
       </div>
 
+      {priorityAnalytics}
+
       <section ref={criticalSectionRef} className="scorecard-section-card">
         <header className="scorecard-section-header is-reference">
           <div>
@@ -1144,89 +1245,6 @@ const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
           ))}
         </div>
       </section>
-
-      <div className="scorecard-analytics-grid is-reference">
-        <section className="scorecard-panel-card">
-          <header className="scorecard-panel-header">
-            <div>
-              <h3>Top slow requests</h3>
-              <p>The most time-consuming calls in this session, ranked by duration.</p>
-            </div>
-          </header>
-          <div className="scorecard-section-divider" />
-
-          <div className="scorecard-panel-list">
-            {slowTop.map((entry) => {
-              const time = entry.time ?? 0;
-              const badgeLabel = entry.response.status >= 400 ? 'Error' : entry.response.status >= 300 ? 'Redirect' : 'Observed';
-              const badgeTone = entry.response.status >= 400 ? 'danger' : 'info';
-              const barWidth = `${Math.max(10, Math.round((time / maxTime) * 100))}%`;
-
-              return (
-                <article key={`${entry.request.method}-${entry.request.url}-${entry.startedDateTime}`} className="scorecard-traffic-card">
-                  <div className="scorecard-traffic-head">
-                    <strong title={entry.request.url}>{getPathLabel(entry.request.url)}</strong>
-                    <div className="scorecard-traffic-metrics">
-                      <span className="scorecard-traffic-time">{fmtT(time)}</span>
-                      <span className={`scorecard-inline-pill tone-${badgeTone}`}>{badgeLabel}</span>
-                    </div>
-                  </div>
-                  <span className="scorecard-traffic-subtitle">{fhost(entry.request.url)}</span>
-                  <div className="scorecard-traffic-bar">
-                    <div
-                      className={`scorecard-traffic-bar-fill tone-${time > 1400 ? 'warning' : 'info'}`}
-                      style={{ width: barWidth } as React.CSSProperties}
-                    />
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="scorecard-panel-card">
-          <header className="scorecard-panel-header">
-            <div>
-              <h3>Domain Analysis</h3>
-              <p>Where traffic volume and latency are concentrated across hosts.</p>
-            </div>
-            <span className="scorecard-header-pill tone-info">{domains.length} hosts</span>
-          </header>
-          <div className="scorecard-section-divider" />
-
-          <div className="scorecard-panel-list">
-            {domains.map((domain) => (
-              <article key={domain.host} className="scorecard-domain-card">
-                <div className="scorecard-domain-card-head">
-                  <strong title={domain.host}>{domain.host}</strong>
-                  <span>{domain.count} req</span>
-                </div>
-                <span className="scorecard-domain-subtitle">{fmtB(domain.bytes)} transferred</span>
-                <div className="scorecard-traffic-bar">
-                  <div
-                    className="scorecard-traffic-bar-fill tone-info"
-                    style={{ width: `${Math.max(10, Math.round((domain.time / maxDomainTime) * 100))}%` } as React.CSSProperties}
-                  />
-                </div>
-                <div className="scorecard-domain-grid">
-                  <div>
-                    <span>AVG</span>
-                    <strong>{fmtT(domain.avg)}</strong>
-                  </div>
-                  <div>
-                    <span>ERRORS</span>
-                    <strong>{domain.errs}</strong>
-                  </div>
-                  <div>
-                    <span>TOTAL TIME</span>
-                    <strong>{fmtT(domain.time)}</strong>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
     </section>
   );
 };

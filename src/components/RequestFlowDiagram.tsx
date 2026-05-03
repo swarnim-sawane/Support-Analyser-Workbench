@@ -29,6 +29,7 @@ import {
 
 interface RequestFlowDiagramProps {
   entries: Entry[];
+  visibleEntries?: Entry[];
   onNodeClick?: (entry: Entry) => void;
 }
 
@@ -78,6 +79,16 @@ function getPathLabel(url: string): string {
   } catch {
     return url;
   }
+}
+
+function getEntryIdentity(entry: Entry): string {
+  return [
+    entry.startedDateTime,
+    entry.request.method,
+    entry.request.url,
+    entry.response.status,
+    entry.time ?? 0,
+  ].join('|');
 }
 
 function getDomainMonogram(domain: string): string {
@@ -317,6 +328,7 @@ const ZoneCard: React.FC<{
   zone: DomainZone;
   maxTime: number;
   visibleTypes: Set<string>;
+  visibleRequestIndexes: Set<number> | null;
   filterMode: FilterMode;
   collapsed: boolean;
   onToggle: () => void;
@@ -326,6 +338,7 @@ const ZoneCard: React.FC<{
   zone,
   maxTime,
   visibleTypes,
+  visibleRequestIndexes,
   filterMode,
   collapsed,
   onToggle,
@@ -334,6 +347,7 @@ const ZoneCard: React.FC<{
 }) => {
   const tone = getZoneHealth(zone);
   const visibleRequests = zone.requests.filter((request) => {
+    if (visibleRequestIndexes && !visibleRequestIndexes.has(request.index)) return false;
     if (!visibleTypes.has(request.type)) return false;
     if (filterMode === 'errors') return request.failed;
     if (filterMode === 'slow') return request.isSlow;
@@ -409,9 +423,38 @@ const ZoneCard: React.FC<{
   );
 };
 
-const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({ entries, onNodeClick }) => {
+const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({ entries, visibleEntries, onNodeClick }) => {
   const flowData = useMemo(() => analyzeFlow(entries), [entries]);
   const { zones, links, p90, maxRequestTime, totalMs } = flowData;
+  const visibleRequestIndexes = useMemo(() => {
+    if (!visibleEntries) return null;
+
+    const indexByEntry = new Map<Entry, number>();
+    const indexesByIdentity = new Map<string, number[]>();
+
+    entries.forEach((entry, index) => {
+      indexByEntry.set(entry, index);
+
+      const identity = getEntryIdentity(entry);
+      const indexes = indexesByIdentity.get(identity) ?? [];
+      indexes.push(index);
+      indexesByIdentity.set(identity, indexes);
+    });
+
+    const next = new Set<number>();
+
+    visibleEntries.forEach((entry) => {
+      const directIndex = indexByEntry.get(entry);
+      if (directIndex !== undefined) {
+        next.add(directIndex);
+        return;
+      }
+
+      indexesByIdentity.get(getEntryIdentity(entry))?.forEach((index) => next.add(index));
+    });
+
+    return next;
+  }, [entries, visibleEntries]);
 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [visibleTypes, setVisibleTypes] = useState<Set<string>>(new Set(ALL_TYPES));
@@ -577,6 +620,7 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({ entries, onNode
                   zone={zone}
                   maxTime={maxRequestTime}
                   visibleTypes={visibleTypes}
+                  visibleRequestIndexes={visibleRequestIndexes}
                   filterMode={filterMode}
                   collapsed={collapsedZones.has(zone.id)}
                   onToggle={() => toggleZone(zone.id)}
@@ -606,6 +650,7 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({ entries, onNode
               zone={zone}
               maxTime={maxRequestTime}
               visibleTypes={visibleTypes}
+              visibleRequestIndexes={visibleRequestIndexes}
               filterMode={filterMode}
               collapsed={collapsedZones.has(zone.id)}
               onToggle={() => toggleZone(zone.id)}

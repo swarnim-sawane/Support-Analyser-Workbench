@@ -44,6 +44,54 @@ const buildEntry = (overrides: Partial<Entry> = {}): Entry => ({
 });
 
 describe('RequestFlowDiagram', () => {
+  it('keeps domain zones visible when an external request filter narrows visible rows', () => {
+    const portalEntry = buildEntry({
+      request: {
+        ...buildEntry().request,
+        url: 'https://portal.example.com/app',
+      },
+    });
+    const authErrorEntry = buildEntry({
+      request: {
+        ...buildEntry().request,
+        url: 'https://idcs.example.com/favicon.ico',
+      },
+      response: {
+        ...buildEntry().response,
+        status: 401,
+        statusText: 'Unauthorized',
+      },
+    });
+    const staticEntry = buildEntry({
+      request: {
+        ...buildEntry().request,
+        url: 'https://static.example.com/app.js',
+      },
+      response: {
+        ...buildEntry().response,
+        content: {
+          size: 1024,
+          mimeType: 'application/javascript',
+        },
+      },
+    });
+
+    render(
+      <RequestFlowDiagram
+        entries={[portalEntry, authErrorEntry, staticEntry]}
+        visibleEntries={[authErrorEntry]}
+      />
+    );
+
+    expect(screen.getAllByText('portal.example.com').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('idcs.example.com').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('static.example.com').length).toBeGreaterThan(0);
+    expect(screen.getByText('/favicon.ico')).toBeInTheDocument();
+    expect(screen.queryByText('/app')).not.toBeInTheDocument();
+    expect(screen.queryByText('/app.js')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/no requests match the current filters/i)).toHaveLength(2);
+  });
+
   it('shows fetch-based 5xx requests in the zone body', () => {
     const entry = buildEntry({
       time: 710,

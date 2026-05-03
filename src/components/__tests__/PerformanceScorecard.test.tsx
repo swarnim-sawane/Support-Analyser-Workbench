@@ -55,6 +55,33 @@ const buildHar = (entries: Entry[]): HarFile => ({
 });
 
 describe('PerformanceScorecard scorecard finding URLs', () => {
+  it('prioritizes slow request and domain analytics directly after the hero', () => {
+    render(<PerformanceScorecard harData={buildHar([buildEntry()])} />);
+
+    const heroHeading = screen.getByRole('heading', {
+      name: /Executive snapshot for this HAR session/i,
+    });
+    const slowRequestsHeading = screen.getByRole('heading', { name: /Top slow requests/i });
+    const domainAnalysisHeading = screen.getByRole('heading', { name: /Domain Analysis/i });
+    const criticalIssuesHeading = screen.getByRole('heading', { name: /Critical Issues/i });
+
+    expect(heroHeading.compareDocumentPosition(slowRequestsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slowRequestsHeading.compareDocumentPosition(domainAnalysisHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(domainAnalysisHeading.compareDocumentPosition(criticalIssuesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('balances analytics panel heights with matching request detail density', () => {
+    render(<PerformanceScorecard harData={buildHar([buildEntry()])} />);
+
+    const slowRequestsHeading = screen.getByRole('heading', { name: /Top slow requests/i });
+    const analyticsGrid = slowRequestsHeading.closest('.scorecard-analytics-grid');
+    const slowRequestsPanel = slowRequestsHeading.closest('section') as HTMLElement;
+
+    expect(analyticsGrid).toHaveClass('is-balanced');
+    expect(within(slowRequestsPanel).getByText('TTFB')).toBeInTheDocument();
+    expect(within(slowRequestsPanel).getByText('TRANSFER')).toBeInTheDocument();
+  });
+
   it('renders auth finding URL segments as external links while keeping the status prefix visible', () => {
     const authUrl = 'https://auth.example.com/favicon.ico';
     const entry = buildEntry({

@@ -56,6 +56,7 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
   const [isLoadingFile, setIsLoadingFile] = useState(true);
   const [showStickyRecent, setShowStickyRecent] = useState(false);
   const flowViewRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const flowSessionEntries = harState.harData?.log.entries ?? [];
   const DETAILS_MIN = 320;
   const DETAILS_MAX = 900;
   const flowViewOptions: Array<{ value: FlowViewMode; label: string; description: string; icon: React.ReactNode }> = [
@@ -350,7 +351,8 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
               <div className="flow-tab-panel">
                 {flowViewMode === 'diagram' ? (
                   <RequestFlowDiagram
-                    entries={harState.filteredEntries}
+                    entries={flowSessionEntries}
+                    visibleEntries={harState.filteredEntries}
                     onNodeClick={(entry: any) => {
                       harState.setSelectedEntry(entry);
                       setActiveTab('analyzer');
