@@ -221,7 +221,11 @@ Once deployed and reachable over VPN, users access the tool at:
 
 `http://10.65.39.163:3000`
 
-That is the main internal URL for the frontend.
+The DNS hostname is also supported:
+
+`http://celvpvm05798.us.oracle.com:3000`
+
+Both frontend origins are allowed by the backend CORS configuration.
 
 ## VM Deployment
 

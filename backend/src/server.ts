@@ -5,6 +5,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
 import { connectDatabases, closeDatabases, getRedis } from './config/database';
 import { configureOutboundProxy } from './config/outboundProxy';
+import { buildAllowedOrigins } from './config/corsOrigins';
 import { setSocketIOInstance } from './utils/socketHelper';
 
 dotenv.config();
@@ -16,17 +17,7 @@ if (outboundProxyUrl) {
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
-const configuredOrigins = (process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
-
-const ALLOWED_ORIGINS: string[] = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:4000',
-  ...configuredOrigins
-];
+const ALLOWED_ORIGINS = buildAllowedOrigins();
 
 app.use(cors({
   origin: (origin, callback) => {

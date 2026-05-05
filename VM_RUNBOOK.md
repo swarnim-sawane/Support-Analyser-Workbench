@@ -13,6 +13,7 @@
 
 **VM:** `celvpvm05798.us.oracle.com`
 **UI URL:** `http://10.65.39.163:3000`
+**UI Hostname URL:** `http://celvpvm05798.us.oracle.com:3000`
 **Backend URL:** `http://10.65.39.163:4000`
 
 ***
@@ -98,7 +99,7 @@ HTTPS_PROXY=http://www-proxy-phx.oraclecorp.com:80
 HTTP_PROXY=http://www-proxy-phx.oraclecorp.com:80
 https_proxy=http://www-proxy-phx.oraclecorp.com:80
 http_proxy=http://www-proxy-phx.oraclecorp.com:80
-NO_PROXY=localhost,127.0.0.1,10.65.39.163
+NO_PROXY=localhost,127.0.0.1,10.65.39.163,celvpvm05798.us.oracle.com
 ```
 
 ### 3. Frontend must be built with correct env vars
@@ -232,6 +233,6 @@ HTTPS_PROXY=http://www-proxy-phx.oraclecorp.com:80
 HTTP_PROXY=http://www-proxy-phx.oraclecorp.com:80
 https_proxy=http://www-proxy-phx.oraclecorp.com:80
 http_proxy=http://www-proxy-phx.oraclecorp.com:80
-NO_PROXY=localhost,127.0.0.1,10.65.39.163
+NO_PROXY=localhost,127.0.0.1,10.65.39.163,celvpvm05798.us.oracle.com
 ```
 
