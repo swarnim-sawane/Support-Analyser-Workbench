@@ -328,7 +328,6 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
           },
           style: {
             ...(node.style || {}),
-            opacity: isDimmed ? 0.28 : 1,
             zIndex: isCritical ? 2 : 1,
           },
         };
@@ -365,7 +364,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
           animated: shouldDim ? false : edge.animated,
           style: {
             ...baseStyle,
-            opacity: shouldDim ? 0.14 : 1,
+            opacity: shouldDim ? 0.38 : 1,
             stroke: edgeStroke,
             strokeWidth: highlightCriticalPath && edgeIsCritical && !shouldDimForFocus
               ? Math.max(Number(baseStyle.strokeWidth ?? 1.2), 2.4)

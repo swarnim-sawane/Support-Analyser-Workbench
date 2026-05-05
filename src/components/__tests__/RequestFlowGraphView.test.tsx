@@ -28,6 +28,8 @@ vi.mock('reactflow', async () => {
               data-node-draggable={node.draggable === undefined ? 'unset' : String(node.draggable)}
               data-node-critical={String(Boolean(node.data?.isCritical))}
               data-node-dimmed={String(Boolean(node.data?.isDimmed))}
+              data-node-style-opacity={node.style?.opacity === undefined ? 'unset' : String(node.style.opacity)}
+              data-node-style-z-index={node.style?.zIndex === undefined ? 'unset' : String(node.style.zIndex)}
             >
               <NodeComponent
                 id={node.id}
@@ -50,6 +52,7 @@ vi.mock('reactflow', async () => {
             key={edge.id}
             data-testid="react-flow-edge"
             data-edge-type={edge.type ?? 'default'}
+            data-edge-style-opacity={edge.style?.opacity === undefined ? 'unset' : String(edge.style.opacity)}
           />
         ))}
         {children}
@@ -350,6 +353,17 @@ describe('RequestFlowGraphView', () => {
     expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-dimmed'))).toEqual([
       'true',
       'false',
+    ]);
+    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-style-opacity'))).toEqual([
+      'unset',
+      'unset',
+    ]);
+    expect(screen.getAllByRole('button', { name: /open in analyzer/i })[0]).toHaveStyle({
+      opacity: '0.54',
+      filter: 'grayscale(0.72) saturate(0.48)',
+    });
+    expect(screen.getAllByTestId('react-flow-edge').map((edge) => edge.getAttribute('data-edge-style-opacity'))).toEqual([
+      '0.38',
     ]);
   });
 
