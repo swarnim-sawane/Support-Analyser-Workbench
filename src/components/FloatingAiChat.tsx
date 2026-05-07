@@ -140,13 +140,14 @@ const FloatingAiChat: React.FC<FloatingAiChatProps> = ({ harData, logData }) => 
   const getLogContext  = () => (logData ? buildConsoleLogContext(logData) : '');
 
   // Calls backend proxy and parses OpenAI SSE format.
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (messageOverride?: string) => {
+    const messageContent = (messageOverride ?? input).trim();
+    if (!messageContent || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: messageContent,
       timestamp: new Date(),
     };
 
@@ -184,7 +185,7 @@ ${fileContext}`;
       // Pass the full conversation history so the model maintains context across turns.
       const conversationMessages = [
         ...historySnapshot.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user' as const, content: input },
+        { role: 'user' as const, content: messageContent },
       ];
 
       // OpenAI chat/completions format.
@@ -255,7 +256,7 @@ ${fileContext}`;
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      void sendMessage();
     }
   };
 
@@ -360,7 +361,13 @@ ${fileContext}`;
                 <p>Ask me about {isConsoleMode ? 'errors, warnings, or patterns' : 'performance, errors, or any specific requests'}.</p>
                 <div className="ai-chat-quick-questions">
                   {quickQuestions.map((q, i) => (
-                    <button key={i} className="ai-chat-quick-question-btn" onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
+                    <button
+                      key={i}
+                      type="button"
+                      className="ai-chat-quick-question-btn"
+                      onClick={() => void sendMessage(q)}
+                      disabled={isLoading}
+                    >
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path d="M8 3V13M13 8H3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                       </svg>
@@ -425,7 +432,11 @@ ${fileContext}`;
               rows={1}
               disabled={isLoading}
             />
-            <button className="ai-chat-send" onClick={sendMessage} disabled={isLoading || !input.trim()}>
+            <button
+              className="ai-chat-send"
+              onClick={() => void sendMessage()}
+              disabled={isLoading || !input.trim()}
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                 <path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
