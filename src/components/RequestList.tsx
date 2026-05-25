@@ -7,6 +7,7 @@ import {
 import { Entry } from '../types/har';
 import { HarAnalyzer } from '../utils/harAnalyzer';
 import { formatBytes, formatTime } from '../utils/formatters';
+import type { RequestFlowFocusPath } from '../utils/requestFlowFocus';
 
 export const formatTimestamp = (iso: string): string => {
   const tIdx = iso.indexOf('T');
@@ -69,6 +70,8 @@ interface RequestListProps {
   selectedEntry: Entry | null;
   onSelectEntry: (entry: Entry) => void;
   timingType: 'relative' | 'independent';
+  focusEntry?: Entry | null;
+  focusPath?: RequestFlowFocusPath | null;
 }
 
 type SortField = 'status' | 'method' | 'url' | 'size' | 'time' | 'timestamp';
@@ -79,6 +82,8 @@ const RequestList: React.FC<RequestListProps> = ({
   selectedEntry,
   onSelectEntry,
   timingType,
+  focusEntry = null,
+  focusPath = null,
 }) => {
   const [sortField, setSortField] = useState<SortField>('timestamp');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -146,6 +151,8 @@ const RequestList: React.FC<RequestListProps> = ({
 
   const renderEntry = (entry: Entry, index: number) => {
     const isSelected = selectedEntry === entry;
+    const isFocusEntry = focusEntry === entry && Boolean(focusPath);
+    const focusLabel = focusPath?.confidence === 'low' ? 'Worth checking' : 'Likely issue';
     const timingBreakdown = HarAnalyzer.getTimingBreakdown(entry);
     const totalTime = entry.time;
     const badges = getAnalysisBadges(entry);
@@ -153,7 +160,7 @@ const RequestList: React.FC<RequestListProps> = ({
     return (
       <div
         key={index}
-        className={`request-item ${isSelected ? 'selected' : ''}`}
+        className={`request-item ${isSelected ? 'selected' : ''} ${isFocusEntry ? 'likely-issue' : ''} ${isFocusEntry && focusPath?.confidence === 'low' ? 'focus-low' : ''}`}
         onClick={() => onSelectEntry(entry)}
       >
         <span
@@ -171,6 +178,11 @@ const RequestList: React.FC<RequestListProps> = ({
           <span className="request-url" title={entry.request.url}>
             {entry.request.url}
           </span>
+          {isFocusEntry && (
+            <span className="request-focus-pill" title={focusPath?.summary}>
+              {focusLabel}
+            </span>
+          )}
           {badges.length > 0 && (
             <span className="analysis-badges">
               {badges.map(b => (
