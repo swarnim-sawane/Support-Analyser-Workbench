@@ -9,9 +9,30 @@ export type RequestFlowFocusReason =
   | 'slow-absolute'
   | 'redirect-before-failure'
   | 'repeated-endpoint'
-  | 'terminal-failure';
+  | 'terminal-failure'
+  | 'large-payload'
+  | 'missing-response-body';
 
 export type RequestFlowFocusSeverity = 'critical' | 'warning' | 'notice';
+export type RequestFlowFocusConfidence = 'high' | 'medium' | 'low';
+export type RequestFlowNextInspection =
+  | 'headers'
+  | 'response'
+  | 'timings'
+  | 'preview'
+  | 'initiator'
+  | 'general';
+
+export type RequestFlowFocusCandidate = {
+  index: number;
+  score: number;
+  severity: RequestFlowFocusSeverity;
+  confidence: RequestFlowFocusConfidence;
+  reasons: RequestFlowFocusReason[];
+  reasonLabels: string[];
+  nextInspection: RequestFlowNextInspection;
+  summary: string;
+};
 
 export type RequestFlowFocusPath = {
   anchorIndex: number;
@@ -19,7 +40,12 @@ export type RequestFlowFocusPath = {
   edgeKeys: string[];
   score: number;
   severity: RequestFlowFocusSeverity;
+  confidence: RequestFlowFocusConfidence;
   reasons: RequestFlowFocusReason[];
+  reasonLabels: string[];
+  nextInspection: RequestFlowNextInspection;
+  summary: string;
+  candidates: RequestFlowFocusCandidate[];
 };
 
 type ScoredRequest = {
@@ -27,6 +53,7 @@ type ScoredRequest = {
   entry: Entry;
   score: number;
   reasons: Set<RequestFlowFocusReason>;
+  resourceType: string;
 };
 
 const ABSOLUTE_SLOW_MS = 3000;
@@ -52,14 +79,25 @@ export function analyzeRequestFlowFocus(entries: Entry[]): RequestFlowFocusPath 
   if (!anchor) return null;
 
   const nodeIndexes = buildFocusNodeIndexes(entries, sortedIndexes, scored, anchor);
+  const anchorCandidate = toFocusCandidate(anchor);
+  const candidates = scored
+    .filter((candidate) => candidate.score >= MIN_FOCUS_SCORE)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, 5)
+    .map(toFocusCandidate);
 
   return {
     anchorIndex: anchor.index,
     nodeIndexes,
     edgeKeys: buildEdgeKeys(nodeIndexes),
     score: anchor.score,
-    severity: anchor.score >= 80 ? 'critical' : anchor.score >= 45 ? 'warning' : 'notice',
-    reasons: Array.from(anchor.reasons),
+    severity: anchorCandidate.severity,
+    confidence: anchorCandidate.confidence,
+    reasons: anchorCandidate.reasons,
+    reasonLabels: anchorCandidate.reasonLabels,
+    nextInspection: anchorCandidate.nextInspection,
+    summary: anchorCandidate.summary,
+    candidates,
   };
 }
 
@@ -74,6 +112,10 @@ function scoreEntry(
   const status = entry.response.status;
   const resourceType = getResourceType(entry);
   const highValueMultiplier = HIGH_VALUE_TYPES.has(resourceType) ? 1.2 : 0.72;
+  const responseSize = Math.max(
+    entry.response.bodySize || 0,
+    entry.response.content?.size || 0
+  );
 
   if (status >= 500) {
     score += 85 * highValueMultiplier;
@@ -110,7 +152,17 @@ function scoreEntry(
     reasons.add('repeated-endpoint');
   }
 
-  return { index, entry, score, reasons };
+  if (responseSize > 1_000_000 && HIGH_VALUE_TYPES.has(resourceType)) {
+    score += 12;
+    reasons.add('large-payload');
+  }
+
+  if (status >= 400 && responseSize <= 0 && HIGH_VALUE_TYPES.has(resourceType)) {
+    score += 8;
+    reasons.add('missing-response-body');
+  }
+
+  return { index, entry, score, reasons, resourceType };
 }
 
 function applyRelationshipSignals(entries: Entry[], sortedIndexes: number[], scored: ScoredRequest[]) {
@@ -177,6 +229,88 @@ function buildFocusNodeIndexes(
 
 function buildEdgeKeys(nodeIndexes: number[]): string[] {
   return nodeIndexes.slice(1).map((index, position) => `edge-${nodeIndexes[position]}-${index}`);
+}
+
+function toFocusCandidate(scored: ScoredRequest): RequestFlowFocusCandidate {
+  const severity = getSeverity(scored.score);
+  const confidence = getConfidence(scored.score, scored.reasons, scored.resourceType);
+  const reasons = Array.from(scored.reasons);
+  const reasonLabels = getReasonLabels(scored.entry, reasons);
+  const nextInspection = getNextInspection(scored.entry, scored.reasons);
+  const summary = buildFocusSummary(scored.entry, reasonLabels);
+
+  return {
+    index: scored.index,
+    score: scored.score,
+    severity,
+    confidence,
+    reasons,
+    reasonLabels,
+    nextInspection,
+    summary,
+  };
+}
+
+function getSeverity(score: number): RequestFlowFocusSeverity {
+  if (score >= 80) return 'critical';
+  if (score >= 45) return 'warning';
+  return 'notice';
+}
+
+function getConfidence(
+  score: number,
+  reasons: Set<RequestFlowFocusReason>,
+  resourceType: string
+): RequestFlowFocusConfidence {
+  if (
+    reasons.has('cors-or-blocked') ||
+    reasons.has('auth-failure') ||
+    reasons.has('repeated-endpoint') ||
+    (reasons.has('http-5xx') && reasons.has('terminal-failure'))
+  ) {
+    return 'high';
+  }
+
+  if (isNoisyResource(resourceType) && score < 80) return 'low';
+  if (score >= 85) return 'high';
+  if (score >= 45) return 'medium';
+  return 'low';
+}
+
+function getReasonLabels(entry: Entry, reasons: Iterable<RequestFlowFocusReason>): string[] {
+  const labels: string[] = [];
+  const reasonSet = new Set(reasons);
+  const status = entry.response.status;
+
+  if (reasonSet.has('http-5xx') || reasonSet.has('http-4xx')) labels.push(`HTTP ${status}`);
+  if (reasonSet.has('auth-failure')) labels.push('Auth failure');
+  if (reasonSet.has('cors-or-blocked')) labels.push('CORS / blocked');
+  if (reasonSet.has('slow-p90')) labels.push('Slow outlier');
+  if (reasonSet.has('slow-absolute')) labels.push('Slow >3s');
+  if (reasonSet.has('redirect-before-failure')) labels.push('Redirect before failure');
+  if (reasonSet.has('repeated-endpoint')) labels.push('Repeated endpoint');
+  if (reasonSet.has('terminal-failure')) labels.push('Terminal request');
+  if (reasonSet.has('large-payload')) labels.push('Large payload');
+  if (reasonSet.has('missing-response-body')) labels.push('Missing response body');
+
+  return labels;
+}
+
+function getNextInspection(
+  entry: Entry,
+  reasons: Set<RequestFlowFocusReason>
+): RequestFlowNextInspection {
+  if (reasons.has('cors-or-blocked') || reasons.has('auth-failure')) return 'headers';
+  if (reasons.has('slow-p90') || reasons.has('slow-absolute')) return 'timings';
+  if (entry.response.content?.text) return 'preview';
+  if (reasons.has('http-5xx') || reasons.has('http-4xx') || reasons.has('missing-response-body')) return 'response';
+  return 'general';
+}
+
+function buildFocusSummary(entry: Entry, labels: string[]): string {
+  const path = getPathLabel(entry.request.url);
+  const primary = labels.slice(0, 3).join(', ');
+  return primary ? `${primary} on ${path}` : `Worth checking ${path}`;
 }
 
 function buildRepeatedPathCounts(entries: Entry[]): Map<string, number> {
@@ -248,4 +382,17 @@ function getResourceType(entry: Entry): string {
   if (mime.includes('image') || /\.(png|jpe?g|gif|svg|webp|ico)$/i.test(url)) return 'image';
   if (mime.includes('font') || /\.(woff2?|ttf|eot|otf)$/i.test(url)) return 'font';
   return 'other';
+}
+
+function isNoisyResource(resourceType: string): boolean {
+  return ['image', 'font', 'stylesheet', 'script'].includes(resourceType);
+}
+
+function getPathLabel(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.pathname || '/'}${parsed.search || ''}`;
+  } catch {
+    return url;
+  }
 }

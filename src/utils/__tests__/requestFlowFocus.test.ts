@@ -55,8 +55,16 @@ describe('analyzeRequestFlowFocus', () => {
     expect(focus).toMatchObject({
       anchorIndex: 1,
       severity: 'critical',
+      confidence: 'high',
+      nextInspection: 'response',
     });
     expect(focus?.reasons).toEqual(expect.arrayContaining(['http-5xx', 'terminal-failure']));
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['HTTP 503', 'Terminal request']));
+    expect(focus?.summary).toContain('HTTP 503');
+    expect(focus?.candidates[0]).toMatchObject({
+      index: 1,
+      confidence: 'high',
+    });
     expect(focus?.nodeIndexes).toEqual(expect.arrayContaining([0, 1]));
   });
 
@@ -81,6 +89,9 @@ describe('analyzeRequestFlowFocus', () => {
     const focus = analyzeRequestFlowFocus(entries);
 
     expect(focus?.anchorIndex).toBe(1);
+    expect(focus?.confidence).toBe('high');
+    expect(focus?.nextInspection).toBe('headers');
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['HTTP 401', 'Auth failure']));
     expect(focus?.reasons).toEqual(expect.arrayContaining(['http-4xx', 'auth-failure']));
   });
 
@@ -98,6 +109,9 @@ describe('analyzeRequestFlowFocus', () => {
 
     expect(focus?.anchorIndex).toBe(0);
     expect(focus?.severity).toBe('critical');
+    expect(focus?.confidence).toBe('high');
+    expect(focus?.nextInspection).toBe('headers');
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['CORS / blocked']));
     expect(focus?.reasons).toEqual(expect.arrayContaining(['cors-or-blocked']));
   });
 
@@ -117,6 +131,9 @@ describe('analyzeRequestFlowFocus', () => {
 
     expect(focus?.anchorIndex).toBe(1);
     expect(focus?.severity).toBe('warning');
+    expect(focus?.confidence).toBe('medium');
+    expect(focus?.nextInspection).toBe('timings');
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['Slow outlier', 'Slow >3s']));
     expect(focus?.reasons).toEqual(expect.arrayContaining(['slow-p90', 'slow-absolute']));
   });
 
@@ -142,6 +159,7 @@ describe('analyzeRequestFlowFocus', () => {
 
     expect(focus?.anchorIndex).toBe(1);
     expect(focus?.nodeIndexes).toEqual(expect.arrayContaining([0, 1]));
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['Redirect before failure']));
     expect(focus?.reasons).toEqual(expect.arrayContaining(['redirect-before-failure']));
   });
 
@@ -161,7 +179,30 @@ describe('analyzeRequestFlowFocus', () => {
     const focus = analyzeRequestFlowFocus(entries);
 
     expect(focus?.reasons).toEqual(expect.arrayContaining(['repeated-endpoint']));
+    expect(focus?.confidence).toBe('high');
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['Repeated endpoint']));
     expect(focus?.nodeIndexes).toEqual(expect.arrayContaining([0, 1]));
+  });
+
+  it('marks noisy static asset failures as low confidence worth-checking candidates', () => {
+    const entries = [
+      makeEntry({
+        request: { ...makeEntry().request, url: 'https://cdn.example.com/logo.png' },
+        response: {
+          ...makeEntry().response,
+          status: 404,
+          statusText: 'Not Found',
+          content: { size: 0, mimeType: 'image/png' },
+        },
+      }),
+    ];
+
+    const focus = analyzeRequestFlowFocus(entries);
+
+    expect(focus?.anchorIndex).toBe(0);
+    expect(focus?.confidence).toBe('low');
+    expect(focus?.reasonLabels).toEqual(expect.arrayContaining(['HTTP 404']));
+    expect(focus?.summary).toContain('HTTP 404');
   });
 
   it('returns null for healthy small HARs', () => {
