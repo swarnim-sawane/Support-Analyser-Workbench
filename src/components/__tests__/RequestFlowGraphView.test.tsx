@@ -31,6 +31,9 @@ vi.mock('reactflow', async () => {
               data-node-dimmed={String(Boolean(node.data?.isDimmed))}
               data-node-focus-anchor={String(Boolean(node.data?.isFocusAnchor))}
               data-node-focus-path={String(Boolean(node.data?.isFocusPath))}
+              data-node-focus-step={node.data?.focusStep ?? ''}
+              data-node-start-here={String(Boolean(node.data?.isFocusAnchor))}
+              data-node-focus-reason={node.data?.focusReason ?? ''}
               data-node-style-opacity={node.style?.opacity === undefined ? 'unset' : String(node.style.opacity)}
               data-node-style-z-index={node.style?.zIndex === undefined ? 'unset' : String(node.style.zIndex)}
             >
@@ -245,11 +248,10 @@ describe('RequestFlowGraphView', () => {
     expect(screen.getByTestId('react-flow-controls')).toBeInTheDocument();
     expect(screen.getByTestId('react-flow-minimap')).toBeInTheDocument();
     expect(screen.getByTestId('react-flow-panel-top-left')).toBeInTheDocument();
-    expect(screen.getByTestId('react-flow-panel-top-right')).toBeInTheDocument();
-    expect(screen.getByText('Legend')).toBeInTheDocument();
-    expect(screen.getByText('Request Flow Summary')).toBeInTheDocument();
-    expect(screen.getByText(/total requests:/i)).toBeInTheDocument();
-    expect(screen.getByText(/failed:/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('react-flow-panel-top-right')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/scattered view diagnostic controls/i)).toBeInTheDocument();
+    expect(screen.queryByText('Legend')).not.toBeInTheDocument();
+    expect(screen.queryByText('Request Flow Summary')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-type'))).toEqual([
       'request',
       'requestError',
@@ -263,6 +265,30 @@ describe('RequestFlowGraphView', () => {
     ]);
     expect(screen.getAllByRole('button', { name: /open in analyzer/i })).toHaveLength(2);
     expect(screen.getByRole('button', { name: /app\.js 503/i })).toBeInTheDocument();
+  });
+
+  it('renders a compact diagnostic toolbar instead of separate legend and summary panels', () => {
+    const entries: Entry[] = [
+      makeEntry({
+        request: { ...makeEntry().request, url: 'https://portal.example.com/' },
+      }),
+      makeEntry({
+        startedDateTime: '2026-04-21T10:30:01.000Z',
+        request: { ...makeEntry().request, url: 'https://portal.example.com/api/error' },
+        response: { ...makeEntry().response, status: 500, statusText: 'Server Error' },
+      }),
+    ];
+
+    renderGraphView({ entries });
+
+    expect(screen.getByLabelText(/scattered view diagnostic controls/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /all/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /errors/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /slow/i })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /focus issue/i })).toBeInTheDocument();
+    expect(screen.getByText(/shown/i)).toBeInTheDocument();
+    expect(screen.queryByText('Legend')).not.toBeInTheDocument();
+    expect(screen.queryByText('Request Flow Summary')).not.toBeInTheDocument();
   });
 
   it('forwards node selection back to the analyzer callback', async () => {
@@ -318,7 +344,7 @@ describe('RequestFlowGraphView', () => {
 
     renderGraphView({ entries });
 
-    const checkbox = screen.getByRole('checkbox', { name: /focus likely issue/i });
+    const checkbox = screen.getByRole('checkbox', { name: /focus issue/i });
     expect(checkbox).toBeChecked();
     expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-focus-path'))).toEqual([
       'true',
@@ -354,7 +380,7 @@ describe('RequestFlowGraphView', () => {
 
     renderGraphView({ entries });
 
-    const checkbox = screen.getByRole('checkbox', { name: /focus likely issue/i });
+    const checkbox = screen.getByRole('checkbox', { name: /focus issue/i });
     expect(checkbox).not.toBeChecked();
     expect(checkbox).toBeDisabled();
     expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-dimmed'))).toEqual([
@@ -387,9 +413,44 @@ describe('RequestFlowGraphView', () => {
 
     expect(screen.getByText('Worth checking')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('checkbox', { name: /focus likely issue/i }));
+    await user.click(screen.getByRole('checkbox', { name: /focus issue/i }));
 
     expect(handleIssueFocusChange).toHaveBeenCalledWith(false);
+  });
+
+  it('marks the diagnostic path with ordered start metadata and focus reason', () => {
+    const entries: Entry[] = [
+      makeEntry({
+        request: { ...makeEntry().request, url: 'https://portal.example.com/' },
+      }),
+      makeEntry({
+        startedDateTime: '2026-04-21T10:30:01.000Z',
+        request: { ...makeEntry().request, url: 'https://portal.example.com/api/error' },
+        response: { ...makeEntry().response, status: 500, statusText: 'Server Error' },
+      }),
+      makeEntry({
+        startedDateTime: '2026-04-21T10:30:02.000Z',
+        request: { ...makeEntry().request, url: 'https://cdn.example.com/app.css' },
+      }),
+    ];
+
+    renderGraphView({
+      entries,
+      issueFocusPath: makeFocusPath({
+        nodeIndexes: [0, 1],
+        anchorIndex: 1,
+        reasonLabels: ['HTTP 500', 'Failed after redirect'],
+      }),
+      issueFocusEnabled: true,
+    });
+
+    const nodes = screen.getAllByTestId('react-flow-node');
+
+    expect(nodes.map((node) => node.getAttribute('data-node-focus-step'))).toEqual(['2', '1', '']);
+    expect(nodes.map((node) => node.getAttribute('data-node-start-here'))).toEqual(['false', 'true', 'false']);
+    expect(nodes[1]).toHaveAttribute('data-node-focus-reason', 'HTTP 500');
+    expect(screen.getByText('Start here')).toBeInTheDocument();
+    expect(screen.getByText('HTTP 500')).toBeInTheDocument();
   });
 
   it('keeps analyzer-filtered requests in the scattered graph and dims nonmatching nodes', () => {

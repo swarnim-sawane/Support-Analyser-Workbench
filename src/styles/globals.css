@@ -16577,6 +16577,198 @@ html[data-theme='redwood'] .scorecard-finding-meta {
   font-weight: 600;
 }
 
+.request-flow-diagnostic-toolbar {
+  width: min(720px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.request-flow-diagnostic-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.request-flow-diagnostic-focus-list,
+.request-flow-diagnostic-status-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.request-flow-diagnostic-chip,
+.request-flow-diagnostic-focus-toggle {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.request-flow-diagnostic-chip svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.request-flow-diagnostic-chip:hover,
+.request-flow-diagnostic-chip.is-active,
+.request-flow-diagnostic-focus-toggle.is-active {
+  border-color: rgba(17, 24, 39, 0.32);
+  background: rgba(17, 24, 39, 0.06);
+  color: var(--text-primary);
+}
+
+.request-flow-diagnostic-focus-toggle input,
+.request-flow-diagnostic-status-chip input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #111827;
+  cursor: pointer;
+}
+
+.request-flow-diagnostic-focus-toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.request-flow-diagnostic-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.request-flow-diagnostic-status-chip .status-badge {
+  height: 24px;
+  min-width: 40px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.request-flow-diagnostic-status-chip input:not(:checked) + .status-badge {
+  opacity: 0.46;
+  filter: grayscale(0.4);
+}
+
+.request-flow-diagnostic-count {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.request-flow-diagnostic-count strong {
+  color: var(--text-primary);
+}
+
+.request-flow-diagnostic-count .is-danger {
+  color: #dc2626;
+  font-weight: 650;
+}
+
+.request-flow-diagnostic-search {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.request-flow-diagnostic-search:focus-within {
+  border-color: rgba(17, 24, 39, 0.36);
+  background: var(--bg-primary);
+}
+
+.request-flow-diagnostic-search svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.request-flow-diagnostic-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.request-flow-diagnostic-search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.request-flow-node-diagnostic-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.request-flow-node-step-badge {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.request-flow-node-start-label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #111827;
+}
+
+.request-flow-node-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
 .request-flow-graph-shell {
   display: flex;
   flex-direction: column;
@@ -17113,6 +17305,47 @@ html[data-theme='dark'] .request-flow-scattered-focus-chip.is-active {
   background: rgba(91, 141, 239, 0.16);
   border-color: rgba(91, 141, 239, 0.34);
   color: #93c5fd;
+}
+
+html[data-theme='dark'] .request-flow-diagnostic-toolbar {
+  background: rgba(2, 6, 23, 0.94);
+  border-color: rgba(148, 163, 184, 0.18);
+  box-shadow: 0 14px 28px rgba(2, 6, 23, 0.28);
+}
+
+html[data-theme='dark'] .request-flow-diagnostic-chip,
+html[data-theme='dark'] .request-flow-diagnostic-focus-toggle,
+html[data-theme='dark'] .request-flow-diagnostic-search {
+  background: rgba(15, 23, 38, 0.9);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+html[data-theme='dark'] .request-flow-diagnostic-chip:hover,
+html[data-theme='dark'] .request-flow-diagnostic-chip.is-active,
+html[data-theme='dark'] .request-flow-diagnostic-focus-toggle.is-active {
+  border-color: rgba(248, 250, 252, 0.28);
+  background: rgba(248, 250, 252, 0.08);
+  color: #f8fafc;
+}
+
+html[data-theme='dark'] .request-flow-diagnostic-search:focus-within {
+  background: rgba(8, 13, 22, 0.96);
+  border-color: rgba(248, 250, 252, 0.28);
+}
+
+html[data-theme='dark'] .request-flow-diagnostic-count,
+html[data-theme='dark'] .request-flow-node-reason {
+  color: #cbd5e1;
+}
+
+html[data-theme='dark'] .request-flow-diagnostic-count strong,
+html[data-theme='dark'] .request-flow-node-start-label {
+  color: #f8fafc;
+}
+
+html[data-theme='dark'] .request-flow-node-step-badge {
+  background: #f8fafc;
+  color: #020617;
 }
 
 html[data-theme='dark'] .request-flow-search-filter-box:focus-within,

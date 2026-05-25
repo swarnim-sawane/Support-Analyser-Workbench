@@ -190,7 +190,7 @@ it('marks the diagnostic path with ordered start metadata and focus reason', () 
 
   const nodes = screen.getAllByTestId('react-flow-node');
 
-  expect(nodes.map((node) => node.getAttribute('data-node-focus-step'))).toEqual(['1', '2', '']);
+  expect(nodes.map((node) => node.getAttribute('data-node-focus-step'))).toEqual(['2', '1', '']);
   expect(nodes.map((node) => node.getAttribute('data-node-start-here'))).toEqual(['false', 'true', 'false']);
   expect(nodes[1]).toHaveAttribute('data-node-focus-reason', 'HTTP 500');
 });
@@ -224,7 +224,12 @@ const focusStepByNodeId = useMemo(() => {
   const steps = new Map<string, number>();
   if (!focusPath) return steps;
 
-  focusPath.nodeIndexes.forEach((index, pathIndex) => {
+  const orderedIndexes = [
+    focusPath.anchorIndex,
+    ...focusPath.nodeIndexes.filter((index) => index !== focusPath.anchorIndex),
+  ];
+
+  orderedIndexes.forEach((index, pathIndex) => {
     steps.set(`request-${index}`, pathIndex + 1);
   });
 

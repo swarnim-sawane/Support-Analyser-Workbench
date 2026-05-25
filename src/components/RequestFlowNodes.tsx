@@ -15,6 +15,8 @@ export interface RequestFlowNodePayload {
   isFocusAnchor?: boolean;
   focusLabel?: string;
   focusSeverity?: 'critical' | 'warning' | 'notice';
+  focusStep?: number;
+  focusReason?: string;
   entryIndex: number;
   domainLabel?: string;
   productLabel?: string;
@@ -148,6 +150,22 @@ const renderNode = (
       }}
     >
       <Handle type="target" position={Position.Left} style={handleStyle(options.accent)} />
+
+      {data.isFocusPath && (
+        <div className="request-flow-node-diagnostic-row">
+          {data.focusStep && (
+            <span className="request-flow-node-step-badge">{data.focusStep}</span>
+          )}
+          {data.isFocusAnchor && (
+            <span className="request-flow-node-start-label">Start here</span>
+          )}
+          {data.isFocusAnchor && data.focusReason && (
+            <span className="request-flow-node-reason" title={data.focusReason}>
+              {data.focusReason}
+            </span>
+          )}
+        </div>
+      )}
 
       <div
         style={{
