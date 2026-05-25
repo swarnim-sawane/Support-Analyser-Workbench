@@ -12,6 +12,7 @@ import {
   getVisibleRequestIndexes,
   requestMatchesFlowFocus,
 } from '../utils/requestFlowFilters';
+import { analyzeRequestFlowFocus } from '../utils/requestFlowFocus';
 import {
   AlertIcon,
   CheckIcon,
@@ -293,8 +294,10 @@ const ZoneConnector: React.FC<{ link: ZoneLink; index: number }> = ({ link, inde
 const RequestRow: React.FC<{
   request: ZoneRequest;
   maxTime: number;
+  isFocusPath?: boolean;
+  isFocusAnchor?: boolean;
   onClick: () => void;
-}> = ({ request, maxTime, onClick }) => {
+}> = ({ request, maxTime, isFocusPath = false, isFocusAnchor = false, onClick }) => {
   const statusTone = getStatusTone(request.status);
   const statusColor = getStatusColor(request.status);
   const typeAccent = TYPE_COLOR[request.type] ?? TYPE_COLOR.other;
@@ -304,7 +307,7 @@ const RequestRow: React.FC<{
   return (
     <button
       type="button"
-      className={`request-flow-request-row tone-${statusTone} ${request.isSlow ? 'is-slow' : ''} ${request.failed ? 'is-error' : ''}`}
+      className={`request-flow-request-row tone-${statusTone} ${request.isSlow ? 'is-slow' : ''} ${request.failed ? 'is-error' : ''} ${isFocusPath ? 'is-focus-path' : ''} ${isFocusAnchor ? 'is-focus-anchor' : ''}`}
       title={request.url}
       onClick={onClick}
       style={{
@@ -325,6 +328,7 @@ const RequestRow: React.FC<{
             <span className="request-flow-request-type-icon" aria-hidden="true">{getTypeIcon(request.type)}</span>
             <span>{TYPE_LABEL[request.type] ?? request.type}</span>
           </span>
+          {isFocusAnchor && <span className="request-flow-request-flag is-likely">Likely issue</span>}
           <span className="request-flow-request-start">+{formatTime(request.startMs)}</span>
           {request.size > 0 && <span className="request-flow-request-bytes">{formatBytes(request.size)}</span>}
         </div>
@@ -350,6 +354,8 @@ const ZoneCard: React.FC<{
   maxTime: number;
   visibleTypes: Set<string>;
   visibleRequestIndexes: Set<number> | null;
+  focusNodeIndexSet: Set<number>;
+  focusAnchorIndex: number | null;
   filterMode: RequestFlowFocusMode;
   collapsed: boolean;
   onToggle: () => void;
@@ -360,6 +366,8 @@ const ZoneCard: React.FC<{
   maxTime,
   visibleTypes,
   visibleRequestIndexes,
+  focusNodeIndexSet,
+  focusAnchorIndex,
   filterMode,
   collapsed,
   onToggle,
@@ -367,6 +375,7 @@ const ZoneCard: React.FC<{
   index,
 }) => {
   const tone = getZoneHealth(zone);
+  const isFocusZone = zone.requests.some((request) => focusNodeIndexSet.has(request.index));
   const visibleRequests = zone.requests.filter((request) => {
     if (visibleRequestIndexes && !visibleRequestIndexes.has(request.index)) return false;
     if (!visibleTypes.has(request.type)) return false;
@@ -375,7 +384,7 @@ const ZoneCard: React.FC<{
 
   return (
     <article
-      className={`request-flow-zone-card tone-${tone} ${collapsed ? 'is-collapsed' : ''}`}
+      className={`request-flow-zone-card tone-${tone} ${collapsed ? 'is-collapsed' : ''} ${isFocusZone ? 'is-focus-zone' : ''}`}
       style={{
         ['--zone-accent' as string]: HEALTH_COLOR[tone],
         ['--zone-surface' as string]: HEALTH_SURFACE[tone],
@@ -432,6 +441,8 @@ const ZoneCard: React.FC<{
                 key={`${request.index}-${request.url}-${request.startMs}`}
                 request={request}
                 maxTime={maxTime}
+                isFocusPath={focusNodeIndexSet.has(request.index)}
+                isFocusAnchor={focusAnchorIndex === request.index}
                 onClick={() => onRequestClick(request.index)}
               />
             ))
@@ -453,6 +464,12 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({
 }) => {
   const searchInputId = useId();
   const flowData = useMemo(() => analyzeFlow(entries), [entries]);
+  const focusPath = useMemo(() => analyzeRequestFlowFocus(entries), [entries]);
+  const focusNodeIndexSet = useMemo(
+    () => new Set(focusPath?.nodeIndexes ?? []),
+    [focusPath]
+  );
+  const focusAnchorIndex = focusPath?.anchorIndex ?? null;
   const { zones, links, p90, maxRequestTime, totalMs } = flowData;
   const visibleRequestIndexes = useMemo(
     () => getVisibleRequestIndexes(entries, visibleEntries),
@@ -710,6 +727,8 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({
                   maxTime={maxRequestTime}
                   visibleTypes={visibleTypes}
                   visibleRequestIndexes={visibleRequestIndexes}
+                  focusNodeIndexSet={focusNodeIndexSet}
+                  focusAnchorIndex={focusAnchorIndex}
                   filterMode={focusMode}
                   collapsed={collapsedZones.has(zone.id)}
                   onToggle={() => toggleZone(zone.id)}
@@ -740,6 +759,8 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({
               maxTime={maxRequestTime}
               visibleTypes={visibleTypes}
               visibleRequestIndexes={visibleRequestIndexes}
+              focusNodeIndexSet={focusNodeIndexSet}
+              focusAnchorIndex={focusAnchorIndex}
               filterMode={focusMode}
               collapsed={collapsedZones.has(zone.id)}
               onToggle={() => toggleZone(zone.id)}

@@ -149,6 +149,42 @@ describe('RequestFlowDiagram', () => {
     expect(screen.getByText('/api/progress')).toBeInTheDocument();
   });
 
+  it('visually emphasizes likely issue requests without adding a report panel', () => {
+    const entries = [
+      buildEntry({
+        request: {
+          ...buildEntry().request,
+          url: 'https://app.example.com/dashboard',
+        },
+        response: {
+          ...buildEntry().response,
+          status: 200,
+        },
+      }),
+      buildEntry({
+        startedDateTime: '2026-05-25T10:00:01.000Z',
+        request: {
+          ...buildEntry().request,
+          url: 'https://app.example.com/api/save',
+        },
+        response: {
+          ...buildEntry().response,
+          status: 500,
+          statusText: 'Server Error',
+        },
+        time: 4100,
+      }),
+    ];
+
+    render(<RequestFlowDiagram entries={entries} />);
+
+    expect(screen.getAllByText(/GET/)[0].closest('.request-flow-request-row')).toBeInTheDocument();
+    expect(document.querySelectorAll('.is-focus-path').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.is-focus-anchor').length).toBe(1);
+    expect(screen.queryByText(/likely issue/i)?.closest('.request-flow-request-row')).toBeTruthy();
+    expect(screen.queryByText(/root cause/i)).not.toBeInTheDocument();
+  });
+
   it('renders a shared request filter panel and forwards status and search changes', () => {
     const onFiltersChange = vi.fn();
     const entry = buildEntry({
