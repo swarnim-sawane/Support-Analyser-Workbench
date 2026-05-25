@@ -1,5 +1,5 @@
 // src/components/RequestList.tsx
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp, ArrowDown, ArrowUpDown,
   CornerDownRight, HardDrive, Clock, AlertTriangle,
@@ -87,6 +87,7 @@ const RequestList: React.FC<RequestListProps> = ({
 }) => {
   const [sortField, setSortField] = useState<SortField>('timestamp');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const selectedRowRef = useRef<HTMLDivElement | null>(null);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -134,6 +135,16 @@ const RequestList: React.FC<RequestListProps> = ({
     return Math.max(...entries.map(e => e.time), 1);
   }, [entries]);
 
+  useEffect(() => {
+    if (!selectedEntry || !selectedRowRef.current) return;
+
+    selectedRowRef.current.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    });
+  }, [selectedEntry, sortedEntries]);
+
   const getStatusClass = (status: number): string => {
     if (status >= 200 && status < 300) return 'status-2xx';
     if (status >= 300 && status < 400) return 'status-3xx';
@@ -160,6 +171,7 @@ const RequestList: React.FC<RequestListProps> = ({
     return (
       <div
         key={index}
+        ref={isSelected ? selectedRowRef : undefined}
         className={`request-item ${isSelected ? 'selected' : ''} ${isFocusEntry ? 'likely-issue' : ''} ${isFocusEntry && focusPath?.confidence === 'low' ? 'focus-low' : ''}`}
         onClick={() => onSelectEntry(entry)}
       >

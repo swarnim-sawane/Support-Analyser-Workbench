@@ -1,6 +1,6 @@
 // src/components/__tests__/RequestList.test.tsx
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import RequestList, { formatTimestamp } from '../RequestList';
 import { Entry } from '../../types/har';
@@ -125,6 +125,37 @@ describe('RequestList - evidence focus', () => {
 
     expect(screen.getByText('Worth checking')).toBeInTheDocument();
     expect(screen.queryByText('Likely issue')).not.toBeInTheDocument();
+  });
+});
+
+describe('RequestList - selected row visibility', () => {
+  it('smoothly scrolls the selected request row into view', async () => {
+    const entries = [
+      makeEntry({ request: { ...makeEntry().request, url: 'https://example.com/api/first' } }),
+      makeEntry({ request: { ...makeEntry().request, url: 'https://example.com/api/target' } }),
+      makeEntry({ request: { ...makeEntry().request, url: 'https://example.com/api/last' } }),
+    ];
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+
+    render(
+      <RequestList
+        entries={entries}
+        selectedEntry={entries[1]}
+        onSelectEntry={noop}
+        timingType="relative"
+      />
+    );
+
+    expect(screen.getByText('https://example.com/api/target').closest('.request-item')).toHaveClass('selected');
+    await waitFor(() => {
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
+    });
   });
 });
 
