@@ -1,6 +1,6 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import HarTabContent from '../HarTabContent';
 
@@ -188,6 +188,8 @@ describe('HarTabContent Redwood theme smoke test', () => {
     requestDetailsMock.mockClear();
     requestFlowDiagramMock.mockClear();
     requestFlowGraphViewMock.mockClear();
+    Element.prototype.scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = Element.prototype.scrollIntoView;
   });
 
   it('renders the HAR analyzer shell in Redwood mode', async () => {
@@ -375,5 +377,48 @@ describe('HarTabContent Redwood theme smoke test', () => {
         issueFocusEnabled: true,
       })
     );
+  });
+
+  it('smoothly scrolls the analyzer into view after selecting a scattered view node', async () => {
+    const user = userEvent.setup();
+    const allEntries = mockHarState.harData.log.entries;
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+
+    render(
+      <HarTabContent
+        tabId="tab-1"
+        fileId="file-1"
+        fileName="session.har"
+        isActive
+        backendUrl="http://localhost:4000"
+      />
+    );
+
+    await waitFor(() => {
+      expect(getHarDataMock).toHaveBeenCalledWith('file-1');
+      expect(mockHarState.loadHarData).toHaveBeenCalled();
+    });
+
+    await user.click(screen.getByRole('button', { name: /request flow/i }));
+    expect(screen.getByText('Scattered view mock')).toBeInTheDocument();
+
+    const graphProps = requestFlowGraphViewMock.mock.calls.at(-1)?.[0];
+    expect(graphProps?.onNodeClick).toEqual(expect.any(Function));
+
+    await act(async () => {
+      graphProps.onNodeClick(allEntries[1]);
+    });
+
+    await waitFor(() => {
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+    expect(mockHarState.setSelectedEntry).toHaveBeenCalledWith(allEntries[1]);
+    expect(screen.queryByText('Scattered view mock')).not.toBeInTheDocument();
+    expect(screen.getByText('Request list mock')).toBeInTheDocument();
   });
 });

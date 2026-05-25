@@ -45,6 +45,8 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
   const [issueFocusEnabled, setIssueFocusEnabled] = useState(true);
   const [detailsWidth, setDetailsWidth] = useState(450);
   const [isLoadingFile, setIsLoadingFile] = useState(true);
+  const [pendingAnalyzerScroll, setPendingAnalyzerScroll] = useState(false);
+  const analyzerScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const flowViewRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const autoSelectedFocusKeyRef = useRef<string | null>(null);
   const manualSelectionSuppressedRef = useRef(false);
@@ -136,6 +138,22 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
     harState.setSelectedEntry(entry);
   };
 
+  const openEntryFromFlow = (entry: any) => {
+    selectEntryManually(entry);
+    setPendingAnalyzerScroll(true);
+    setActiveTab('analyzer');
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'analyzer' || !pendingAnalyzerScroll) return;
+
+    analyzerScrollAnchorRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+    setPendingAnalyzerScroll(false);
+  }, [activeTab, pendingAnalyzerScroll]);
+
   const moveFlowView = (index: number) => {
     const nextOption = flowViewOptions[index];
     if (!nextOption) return;
@@ -211,6 +229,8 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
 
       {harState.harData && (
         <>
+          <div ref={analyzerScrollAnchorRef} className="analyzer-scroll-anchor" />
+
           {activeTab === 'analyzer' && (
             <>
               <div
@@ -294,18 +314,12 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
                     onFocusModeChange={setRequestFlowFocusMode}
                     issueFocusPath={requestFlowIssueFocus}
                     issueFocusEnabled={issueFocusEnabled}
-                    onNodeClick={(entry: any) => {
-                      selectEntryManually(entry);
-                      setActiveTab('analyzer');
-                    }}
+                    onNodeClick={openEntryFromFlow}
                   />
                 ) : flowViewMode === 'trace' ? (
                   <RequestFlowTraceView
                     entries={harState.filteredEntries}
-                    onNodeClick={(entry) => {
-                      selectEntryManually(entry);
-                      setActiveTab('analyzer');
-                    }}
+                    onNodeClick={openEntryFromFlow}
                   />
                 ) : (
                   <RequestFlowGraphView
@@ -318,10 +332,7 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
                     issueFocusPath={requestFlowIssueFocus}
                     issueFocusEnabled={issueFocusEnabled}
                     onIssueFocusEnabledChange={setIssueFocusEnabled}
-                    onNodeClick={(entry) => {
-                      selectEntryManually(entry);
-                      setActiveTab('analyzer');
-                    }}
+                    onNodeClick={openEntryFromFlow}
                   />
                 )}
               </div>
