@@ -294,7 +294,6 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
                     onFocusModeChange={setRequestFlowFocusMode}
                     issueFocusPath={requestFlowIssueFocus}
                     issueFocusEnabled={issueFocusEnabled}
-                    onIssueFocusEnabledChange={setIssueFocusEnabled}
                     onNodeClick={(entry: any) => {
                       selectEntryManually(entry);
                       setActiveTab('analyzer');
