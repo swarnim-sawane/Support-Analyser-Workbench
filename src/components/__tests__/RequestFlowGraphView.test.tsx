@@ -28,6 +28,8 @@ vi.mock('reactflow', async () => {
               data-node-draggable={node.draggable === undefined ? 'unset' : String(node.draggable)}
               data-node-critical={String(Boolean(node.data?.isCritical))}
               data-node-dimmed={String(Boolean(node.data?.isDimmed))}
+              data-node-focus-anchor={String(Boolean(node.data?.isFocusAnchor))}
+              data-node-focus-path={String(Boolean(node.data?.isFocusPath))}
               data-node-style-opacity={node.style?.opacity === undefined ? 'unset' : String(node.style.opacity)}
               data-node-style-z-index={node.style?.zIndex === undefined ? 'unset' : String(node.style.zIndex)}
             >
@@ -52,7 +54,9 @@ vi.mock('reactflow', async () => {
             key={edge.id}
             data-testid="react-flow-edge"
             data-edge-type={edge.type ?? 'default'}
+            data-edge-focus-path={String(Boolean(edge.data?.isFocusPath))}
             data-edge-style-opacity={edge.style?.opacity === undefined ? 'unset' : String(edge.style.opacity)}
+            data-edge-style-stroke-width={edge.style?.strokeWidth === undefined ? 'unset' : String(edge.style.strokeWidth)}
           />
         ))}
         {children}
@@ -253,12 +257,12 @@ describe('RequestFlowGraphView', () => {
     expect(handleNodeClick).toHaveBeenCalledWith(entries[0]);
   });
 
-  it('adds a checkbox to highlight the critical path', async () => {
+  it('auto-focuses the likely issue path and can restore the normal graph', async () => {
     const user = userEvent.setup();
     const entries: Entry[] = [
       makeEntry({
         startedDateTime: '2026-04-21T10:30:00.000Z',
-        request: { ...makeEntry().request, url: 'https://portal.example.com/' },
+        request: { ...makeEntry().request, url: 'https://portal.example.com/dashboard' },
         response: {
           ...makeEntry().response,
           status: 200,
@@ -267,12 +271,14 @@ describe('RequestFlowGraphView', () => {
       }),
       makeEntry({
         startedDateTime: '2026-04-21T10:30:01.000Z',
-        request: { ...makeEntry().request, url: 'https://static.examplecdn.com/app.js' },
+        request: { ...makeEntry().request, url: 'https://portal.example.com/api/checkout' },
         response: {
           ...makeEntry().response,
-          status: 200,
-          content: { size: 512, mimeType: 'application/javascript' },
+          status: 503,
+          statusText: 'Service Unavailable',
+          content: { size: 512, mimeType: 'application/json' },
         },
+        time: 5200,
       }),
       makeEntry({
         startedDateTime: '2026-04-21T10:30:02.000Z',
@@ -287,19 +293,15 @@ describe('RequestFlowGraphView', () => {
 
     renderGraphView({ entries });
 
-    const checkbox = screen.getByRole('checkbox', { name: /highlight critical path/i });
-    expect(checkbox).not.toBeChecked();
-    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-critical'))).toEqual([
-      'false',
-      'false',
+    const checkbox = screen.getByRole('checkbox', { name: /focus likely issue/i });
+    expect(checkbox).toBeChecked();
+    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-focus-path'))).toEqual([
+      'true',
+      'true',
       'false',
     ]);
-
-    await user.click(checkbox);
-
-    expect(checkbox).toBeChecked();
-    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-critical'))).toEqual([
-      'true',
+    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-focus-anchor'))).toEqual([
+      'false',
       'true',
       'false',
     ]);
@@ -307,6 +309,32 @@ describe('RequestFlowGraphView', () => {
       'false',
       'false',
       'true',
+    ]);
+
+    await user.click(checkbox);
+
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-dimmed'))).toEqual([
+      'false',
+      'false',
+      'false',
+    ]);
+  });
+
+  it('does not dim healthy graphs when no likely issue exists', () => {
+    const entries = [
+      makeEntry({ time: 120 }),
+      makeEntry({ startedDateTime: '2026-04-21T10:30:01.000Z', time: 180 }),
+    ];
+
+    renderGraphView({ entries });
+
+    const checkbox = screen.getByRole('checkbox', { name: /focus likely issue/i });
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeDisabled();
+    expect(screen.getAllByTestId('react-flow-node').map((node) => node.getAttribute('data-node-dimmed'))).toEqual([
+      'false',
+      'false',
     ]);
   });
 

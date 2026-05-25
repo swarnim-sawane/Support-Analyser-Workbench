@@ -8,7 +8,7 @@ import ReactFlow, {
   useEdgesState,
   useNodesState,
 } from 'reactflow';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node, ReactFlowInstance } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Entry, FilterOptions } from '../types/har';
 import type { RequestFlowFocusMode } from '../types/requestFlow';
@@ -17,6 +17,7 @@ import {
   requestMatchesFlowFocus,
 } from '../utils/requestFlowFilters';
 import { analyzeFlow, TYPE_COLOR, type ZoneRequest } from '../utils/requestFlowAnalyzer';
+import { analyzeRequestFlowFocus } from '../utils/requestFlowFocus';
 import { AlertIcon, FlameIcon, GlobeIcon, SearchIcon, SparklesIcon } from './Icons';
 import {
   DefaultNode,
@@ -80,6 +81,7 @@ function buildGraphElements(
   onEntrySelect?: (entryIndex: number) => void
 ) {
   const flowData = analyzeFlow(entries);
+  const focusPath = analyzeRequestFlowFocus(entries);
   const requestByIndex = new Map<number, ZoneRequest>();
   const domainMetaByIndex = new Map<number, { domainLabel: string; productLabel?: string }>();
 
@@ -198,6 +200,7 @@ function buildGraphElements(
     nodes,
     edges,
     criticalNodeIds: Array.from(criticalNodeIds),
+    focusPath,
     totalRequests,
     failedCount,
     slowCount,
@@ -238,7 +241,9 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
 }) => {
   const onNodeClickRef = useRef(onNodeClick);
   const searchInputId = useId();
-  const [highlightCriticalPath, setHighlightCriticalPath] = useState(false);
+  const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const hasAutoFitFocusRef = useRef<string | null>(null);
+  const [focusLikelyIssue, setFocusLikelyIssue] = useState(true);
 
   useEffect(() => {
     onNodeClickRef.current = onNodeClick;
@@ -263,14 +268,18 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
     [entries, visibleEntries]
   );
   const {
-    criticalNodeIds,
+    focusPath,
     totalRequests,
     failedCount,
     slowCount,
     successRate,
     p90,
   } = graphModel;
-  const criticalNodeIdSet = useMemo(() => new Set(criticalNodeIds), [criticalNodeIds]);
+  const focusNodeIdSet = useMemo(
+    () => new Set((focusPath?.nodeIndexes ?? []).map((index) => `request-${index}`)),
+    [focusPath]
+  );
+  const focusAnchorNodeId = focusPath ? `request-${focusPath.anchorIndex}` : null;
   const [nodes, setNodes, onNodesChange] = useNodesState(graphModel.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(graphModel.edges);
 
@@ -278,6 +287,23 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
     setNodes(graphModel.nodes);
     setEdges(graphModel.edges);
   }, [graphModel, setEdges, setNodes]);
+
+  useEffect(() => {
+    if (!focusLikelyIssue || !focusPath || !reactFlowInstanceRef.current) return;
+
+    const focusKey = `${focusPath.anchorIndex}:${focusPath.nodeIndexes.join(',')}`;
+    if (hasAutoFitFocusRef.current === focusKey) return;
+
+    hasAutoFitFocusRef.current = focusKey;
+    window.requestAnimationFrame(() => {
+      reactFlowInstanceRef.current?.fitView({
+        nodes: focusPath.nodeIndexes.map((index) => ({ id: `request-${index}` })),
+        padding: 0.28,
+        maxZoom: 1.05,
+        duration: 500,
+      });
+    });
+  }, [focusLikelyIssue, focusPath]);
 
   const focusedNodeIdSet = useMemo(() => {
     const focused = new Set<string>();
@@ -315,9 +341,12 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
   const renderedNodes = useMemo(
     () =>
       nodes.map((node) => {
-        const isCritical = highlightCriticalPath && criticalNodeIdSet.has(node.id);
+        const isIssueFocused = focusLikelyIssue && Boolean(focusPath);
+        const isFocusPath = isIssueFocused && focusNodeIdSet.has(node.id);
+        const isFocusAnchor = isIssueFocused && node.id === focusAnchorNodeId;
         const matchesFlowVisibility = focusedNodeIdSet.has(node.id);
-        const isDimmed = !matchesFlowVisibility || (highlightCriticalPath && !isCritical);
+        const isCritical = Boolean(isFocusPath);
+        const isDimmed = !matchesFlowVisibility || (isIssueFocused && !isFocusPath);
 
         return {
           ...node,
@@ -325,31 +354,37 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
             ...node.data,
             isCritical,
             isDimmed,
+            isFocusPath,
+            isFocusAnchor,
+            focusSeverity: focusPath?.severity,
           },
           style: {
             ...(node.style || {}),
-            zIndex: isCritical ? 2 : 1,
+            zIndex: isFocusAnchor ? 3 : isFocusPath ? 2 : 1,
           },
         };
       }),
-    [nodes, highlightCriticalPath, criticalNodeIdSet, focusedNodeIdSet]
+    [nodes, focusLikelyIssue, focusPath, focusNodeIdSet, focusAnchorNodeId, focusedNodeIdSet]
   );
 
   const renderedEdges = useMemo(
     () =>
       edges.map((edge) => {
-        const edgeIsCritical =
-          criticalNodeIdSet.has(edge.source) && criticalNodeIdSet.has(edge.target);
+        const isIssueFocused = focusLikelyIssue && Boolean(focusPath);
+        const edgeIsFocusPath =
+          isIssueFocused &&
+          focusNodeIdSet.has(edge.source) &&
+          focusNodeIdSet.has(edge.target);
         const edgeMatchesFlowVisibility =
           focusedNodeIdSet.has(edge.source) && focusedNodeIdSet.has(edge.target);
         const shouldDimForFocus = !edgeMatchesFlowVisibility;
-        const shouldDimForCritical = highlightCriticalPath && !edgeIsCritical;
-        const shouldDim = shouldDimForFocus || shouldDimForCritical;
+        const shouldDimForIssueFocus = isIssueFocused && !edgeIsFocusPath;
+        const shouldDim = shouldDimForFocus || shouldDimForIssueFocus;
         const baseStyle = edge.style || {};
         const baseStroke = String(baseStyle.stroke || '#94a3b8');
-        const highlightStroke = baseStroke === '#d4d4d4' ? '#5b8def' : baseStroke;
-        const edgeStroke = highlightCriticalPath && edgeIsCritical && !shouldDimForFocus
-          ? highlightStroke
+        const focusStroke = focusPath?.severity === 'critical' ? '#ef4444' : '#f97316';
+        const edgeStroke = edgeIsFocusPath
+          ? focusStroke
           : baseStroke;
         const markerEnd =
           edge.markerEnd && typeof edge.markerEnd === 'object'
@@ -362,18 +397,23 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
         return {
           ...edge,
           animated: shouldDim ? false : edge.animated,
+          data: {
+            ...(edge.data || {}),
+            isFocusPath: edgeIsFocusPath,
+          },
           style: {
             ...baseStyle,
             opacity: shouldDim ? 0.38 : 1,
             stroke: edgeStroke,
-            strokeWidth: highlightCriticalPath && edgeIsCritical && !shouldDimForFocus
-              ? Math.max(Number(baseStyle.strokeWidth ?? 1.2), 2.4)
+            strokeWidth: edgeIsFocusPath
+              ? Math.max(Number(baseStyle.strokeWidth ?? 1.2), 3)
               : Number(baseStyle.strokeWidth ?? 1.2),
+            filter: edgeIsFocusPath ? `drop-shadow(0 0 7px ${focusStroke}66)` : undefined,
           },
           markerEnd,
         };
       }),
-    [edges, highlightCriticalPath, criticalNodeIdSet, focusedNodeIdSet]
+    [edges, focusLikelyIssue, focusPath, focusNodeIdSet, focusedNodeIdSet]
   );
 
   if (entries.length === 0) {
@@ -398,6 +438,9 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={NODE_TYPES}
+          onInit={(instance) => {
+            reactFlowInstanceRef.current = instance;
+          }}
           fitView
           fitViewOptions={{ padding: 0.16, maxZoom: 1.05 }}
           nodesDraggable
@@ -508,14 +551,15 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
               </div>
               <div className="request-flow-scattered-divider" />
               <label
-                className={`request-flow-scattered-checkbox ${highlightCriticalPath ? 'is-active' : ''}`}
+                className={`request-flow-scattered-checkbox ${focusLikelyIssue && focusPath ? 'is-active' : ''}`}
               >
                 <input
                   type="checkbox"
-                  checked={highlightCriticalPath}
-                  onChange={(event) => setHighlightCriticalPath(event.target.checked)}
+                  checked={focusLikelyIssue && Boolean(focusPath)}
+                  disabled={!focusPath}
+                  onChange={(event) => setFocusLikelyIssue(event.target.checked)}
                 />
-                <span>Highlight critical path</span>
+                <span>Focus likely issue</span>
               </label>
             </div>
           </Panel>

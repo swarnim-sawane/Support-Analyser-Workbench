@@ -11,6 +11,9 @@ export interface RequestFlowNodePayload {
   isSlow?: boolean;
   isCritical?: boolean;
   isDimmed?: boolean;
+  isFocusPath?: boolean;
+  isFocusAnchor?: boolean;
+  focusSeverity?: 'critical' | 'warning' | 'notice';
   entryIndex: number;
   domainLabel?: string;
   productLabel?: string;
@@ -89,12 +92,29 @@ const renderNode = (
   const pathLabel = getPathLabel(data.url);
   const isInteractive = typeof data.onClick === 'function';
   const domainLabel = data.productLabel || data.domainLabel;
-  const boxShadow = data.isCritical
-    ? `0 0 0 2px ${options.highlightRing}, ${options.shadow}`
+  const focusColor = data.focusSeverity === 'critical'
+    ? '#ef4444'
+    : data.focusSeverity === 'warning'
+      ? '#f97316'
+      : '#f59e0b';
+  const focusShadow = data.isFocusPath
+    ? `0 0 0 ${data.isFocusAnchor ? 3 : 2}px ${focusColor}33, 0 10px 28px ${focusColor}26`
     : options.shadow;
+  const boxShadow = data.isCritical || data.isFocusPath
+    ? `0 0 0 2px ${data.isFocusPath ? `${focusColor}55` : options.highlightRing}, ${focusShadow}`
+    : options.shadow;
+  const borderColor = data.isFocusPath ? focusColor : options.accent;
   const traceBadge = getTraceBadge(data.traceRole, data.status);
   const badges = [
     ...(traceBadge ? [traceBadge] : []),
+    ...(data.isFocusAnchor
+      ? [
+          {
+            label: 'Likely issue',
+            color: focusColor,
+          },
+        ]
+      : []),
     ...(options.badgeLabel
       ? [
           {
@@ -116,7 +136,7 @@ const renderNode = (
         padding: '12px 16px',
         borderRadius: '10px',
         background: options.surface || 'var(--bg-primary)',
-        border: `${data.isCritical ? 2 : 1}px solid ${options.accent}`,
+        border: `${data.isCritical || data.isFocusAnchor ? 2 : 1}px solid ${borderColor}`,
         minWidth: '220px',
         maxWidth: '220px',
         boxShadow,
