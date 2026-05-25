@@ -17,7 +17,7 @@ import {
   requestMatchesFlowFocus,
 } from '../utils/requestFlowFilters';
 import { analyzeFlow, TYPE_COLOR, type ZoneRequest } from '../utils/requestFlowAnalyzer';
-import { analyzeRequestFlowFocus } from '../utils/requestFlowFocus';
+import { analyzeRequestFlowFocus, type RequestFlowFocusPath } from '../utils/requestFlowFocus';
 import { AlertIcon, FlameIcon, GlobeIcon, SearchIcon, SparklesIcon } from './Icons';
 import {
   DefaultNode,
@@ -32,6 +32,9 @@ interface RequestFlowGraphViewProps {
   onFiltersChange: (filters: Partial<FilterOptions>) => void;
   focusMode: RequestFlowFocusMode;
   onFocusModeChange: (mode: RequestFlowFocusMode) => void;
+  issueFocusPath?: RequestFlowFocusPath | null;
+  issueFocusEnabled?: boolean;
+  onIssueFocusEnabledChange?: (enabled: boolean) => void;
   onNodeClick?: (entry: Entry) => void;
 }
 
@@ -237,6 +240,9 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
   onFiltersChange,
   focusMode,
   onFocusModeChange,
+  issueFocusPath,
+  issueFocusEnabled,
+  onIssueFocusEnabledChange,
   onNodeClick,
 }) => {
   const onNodeClickRef = useRef(onNodeClick);
@@ -268,13 +274,16 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
     [entries, visibleEntries]
   );
   const {
-    focusPath,
+    focusPath: computedFocusPath,
     totalRequests,
     failedCount,
     slowCount,
     successRate,
     p90,
   } = graphModel;
+  const focusPath = issueFocusPath ?? computedFocusPath;
+  const focusLikelyIssueActive = issueFocusEnabled ?? focusLikelyIssue;
+  const focusAnchorLabel = focusPath?.confidence === 'low' ? 'Worth checking' : 'Likely issue';
   const focusNodeIdSet = useMemo(
     () => new Set((focusPath?.nodeIndexes ?? []).map((index) => `request-${index}`)),
     [focusPath]
@@ -289,7 +298,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
   }, [graphModel, setEdges, setNodes]);
 
   useEffect(() => {
-    if (!focusLikelyIssue || !focusPath || !reactFlowInstanceRef.current) return;
+    if (!focusLikelyIssueActive || !focusPath || !reactFlowInstanceRef.current) return;
 
     const focusKey = `${focusPath.anchorIndex}:${focusPath.nodeIndexes.join(',')}`;
     if (hasAutoFitFocusRef.current === focusKey) return;
@@ -303,7 +312,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
         duration: 500,
       });
     });
-  }, [focusLikelyIssue, focusPath]);
+  }, [focusLikelyIssueActive, focusPath]);
 
   const focusedNodeIdSet = useMemo(() => {
     const focused = new Set<string>();
@@ -341,7 +350,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
   const renderedNodes = useMemo(
     () =>
       nodes.map((node) => {
-        const isIssueFocused = focusLikelyIssue && Boolean(focusPath);
+        const isIssueFocused = focusLikelyIssueActive && Boolean(focusPath);
         const isFocusPath = isIssueFocused && focusNodeIdSet.has(node.id);
         const isFocusAnchor = isIssueFocused && node.id === focusAnchorNodeId;
         const matchesFlowVisibility = focusedNodeIdSet.has(node.id);
@@ -356,6 +365,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
             isDimmed,
             isFocusPath,
             isFocusAnchor,
+            focusLabel: focusAnchorLabel,
             focusSeverity: focusPath?.severity,
           },
           style: {
@@ -364,13 +374,13 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
           },
         };
       }),
-    [nodes, focusLikelyIssue, focusPath, focusNodeIdSet, focusAnchorNodeId, focusedNodeIdSet]
+    [nodes, focusLikelyIssueActive, focusPath, focusNodeIdSet, focusAnchorNodeId, focusAnchorLabel, focusedNodeIdSet]
   );
 
   const renderedEdges = useMemo(
     () =>
       edges.map((edge) => {
-        const isIssueFocused = focusLikelyIssue && Boolean(focusPath);
+        const isIssueFocused = focusLikelyIssueActive && Boolean(focusPath);
         const edgeIsFocusPath =
           isIssueFocused &&
           focusNodeIdSet.has(edge.source) &&
@@ -413,8 +423,17 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
           markerEnd,
         };
       }),
-    [edges, focusLikelyIssue, focusPath, focusNodeIdSet, focusedNodeIdSet]
+    [edges, focusLikelyIssueActive, focusPath, focusNodeIdSet, focusedNodeIdSet]
   );
+
+  const handleIssueFocusToggle = (enabled: boolean) => {
+    if (onIssueFocusEnabledChange) {
+      onIssueFocusEnabledChange(enabled);
+      return;
+    }
+
+    setFocusLikelyIssue(enabled);
+  };
 
   if (entries.length === 0) {
     return (
@@ -551,13 +570,13 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
               </div>
               <div className="request-flow-scattered-divider" />
               <label
-                className={`request-flow-scattered-checkbox ${focusLikelyIssue && focusPath ? 'is-active' : ''}`}
+                className={`request-flow-scattered-checkbox ${focusLikelyIssueActive && focusPath ? 'is-active' : ''}`}
               >
                 <input
                   type="checkbox"
-                  checked={focusLikelyIssue && Boolean(focusPath)}
+                  checked={focusLikelyIssueActive && Boolean(focusPath)}
                   disabled={!focusPath}
-                  onChange={(event) => setFocusLikelyIssue(event.target.checked)}
+                  onChange={(event) => handleIssueFocusToggle(event.target.checked)}
                 />
                 <span>Focus likely issue</span>
               </label>

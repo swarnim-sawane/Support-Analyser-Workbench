@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import RequestFlowDiagram from '../RequestFlowDiagram';
 import { Entry, FilterOptions } from '../../types/har';
+import type { RequestFlowFocusPath } from '../../utils/requestFlowFocus';
 
 const buildEntry = (overrides: Partial<Entry> = {}): Entry => ({
   startedDateTime: '2026-04-21T10:30:00.000Z',
@@ -55,6 +56,21 @@ const defaultFilters: FilterOptions = {
   searchTerm: '',
   timingType: 'relative',
 };
+
+const makeFocusPath = (overrides: Partial<RequestFlowFocusPath> = {}): RequestFlowFocusPath => ({
+  anchorIndex: 0,
+  nodeIndexes: [0],
+  edgeKeys: [],
+  score: 36,
+  severity: 'notice',
+  confidence: 'low',
+  reasons: ['http-4xx'],
+  reasonLabels: ['HTTP 404'],
+  nextInspection: 'general',
+  summary: 'HTTP 404 on /logo.png',
+  candidates: [],
+  ...overrides,
+});
 
 describe('RequestFlowDiagram', () => {
   it('keeps domain zones visible when an external request filter narrows visible rows', () => {
@@ -183,6 +199,32 @@ describe('RequestFlowDiagram', () => {
     expect(document.querySelectorAll('.is-focus-anchor').length).toBe(1);
     expect(screen.queryByText(/likely issue/i)?.closest('.request-flow-request-row')).toBeTruthy();
     expect(screen.queryByText(/root cause/i)).not.toBeInTheDocument();
+  });
+
+  it('uses worth-checking wording for low-confidence shared focus metadata', () => {
+    const entry = buildEntry({
+      request: {
+        ...buildEntry().request,
+        url: 'https://cdn.example.com/logo.png',
+      },
+      response: {
+        ...buildEntry().response,
+        status: 404,
+        statusText: 'Not Found',
+        content: { size: 0, mimeType: 'image/png' },
+      },
+    });
+
+    render(
+      <RequestFlowDiagram
+        entries={[entry]}
+        issueFocusPath={makeFocusPath()}
+        issueFocusEnabled
+      />
+    );
+
+    expect(screen.getByText('Worth checking')).toBeInTheDocument();
+    expect(screen.queryByText('Likely issue')).not.toBeInTheDocument();
   });
 
   it('renders a shared request filter panel and forwards status and search changes', () => {

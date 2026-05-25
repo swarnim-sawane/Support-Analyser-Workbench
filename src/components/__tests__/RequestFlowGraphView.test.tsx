@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import RequestFlowGraphView from '../RequestFlowGraphView';
 import { Entry, FilterOptions } from '../../types/har';
 import type { RequestFlowFocusMode } from '../../types/requestFlow';
+import type { RequestFlowFocusPath } from '../../utils/requestFlowFocus';
 
 vi.mock('reactflow', async () => {
   const ReactModule = await import('react');
@@ -140,6 +141,21 @@ const defaultFilters: FilterOptions = {
   timingType: 'relative',
 };
 
+const makeFocusPath = (overrides: Partial<RequestFlowFocusPath> = {}): RequestFlowFocusPath => ({
+  anchorIndex: 0,
+  nodeIndexes: [0],
+  edgeKeys: [],
+  score: 36,
+  severity: 'notice',
+  confidence: 'low',
+  reasons: ['http-4xx'],
+  reasonLabels: ['HTTP 404'],
+  nextInspection: 'general',
+  summary: 'HTTP 404 on /logo.png',
+  candidates: [],
+  ...overrides,
+});
+
 function renderGraphView({
   entries,
   visibleEntries = entries,
@@ -147,6 +163,9 @@ function renderGraphView({
   focusMode = 'all',
   onFiltersChange = vi.fn(),
   onFocusModeChange = vi.fn(),
+  issueFocusPath,
+  issueFocusEnabled,
+  onIssueFocusEnabledChange,
   onNodeClick = vi.fn(),
 }: {
   entries: Entry[];
@@ -155,6 +174,9 @@ function renderGraphView({
   focusMode?: RequestFlowFocusMode;
   onFiltersChange?: (filters: Partial<FilterOptions>) => void;
   onFocusModeChange?: (mode: RequestFlowFocusMode) => void;
+  issueFocusPath?: RequestFlowFocusPath | null;
+  issueFocusEnabled?: boolean;
+  onIssueFocusEnabledChange?: (enabled: boolean) => void;
   onNodeClick?: (entry: Entry) => void;
 }) {
   return render(
@@ -165,6 +187,9 @@ function renderGraphView({
       focusMode={focusMode}
       onFiltersChange={onFiltersChange}
       onFocusModeChange={onFocusModeChange}
+      issueFocusPath={issueFocusPath}
+      issueFocusEnabled={issueFocusEnabled}
+      onIssueFocusEnabledChange={onIssueFocusEnabledChange}
       onNodeClick={onNodeClick}
     />
   );
@@ -336,6 +361,35 @@ describe('RequestFlowGraphView', () => {
       'false',
       'false',
     ]);
+  });
+
+  it('uses shared low-confidence focus wording and controlled focus toggle', async () => {
+    const user = userEvent.setup();
+    const handleIssueFocusChange = vi.fn();
+    const entries: Entry[] = [
+      makeEntry({
+        request: { ...makeEntry().request, url: 'https://cdn.example.com/logo.png' },
+        response: {
+          ...makeEntry().response,
+          status: 404,
+          statusText: 'Not Found',
+          content: { size: 0, mimeType: 'image/png' },
+        },
+      }),
+    ];
+
+    renderGraphView({
+      entries,
+      issueFocusPath: makeFocusPath(),
+      issueFocusEnabled: true,
+      onIssueFocusEnabledChange: handleIssueFocusChange,
+    });
+
+    expect(screen.getByText('Worth checking')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: /focus likely issue/i }));
+
+    expect(handleIssueFocusChange).toHaveBeenCalledWith(false);
   });
 
   it('keeps analyzer-filtered requests in the scattered graph and dims nonmatching nodes', () => {

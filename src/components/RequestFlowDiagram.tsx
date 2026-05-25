@@ -12,7 +12,7 @@ import {
   getVisibleRequestIndexes,
   requestMatchesFlowFocus,
 } from '../utils/requestFlowFilters';
-import { analyzeRequestFlowFocus } from '../utils/requestFlowFocus';
+import { analyzeRequestFlowFocus, type RequestFlowFocusPath } from '../utils/requestFlowFocus';
 import {
   AlertIcon,
   CheckIcon,
@@ -41,6 +41,8 @@ interface RequestFlowDiagramProps {
   onFiltersChange?: (filters: Partial<FilterOptions>) => void;
   focusMode?: RequestFlowFocusMode;
   onFocusModeChange?: (mode: RequestFlowFocusMode) => void;
+  issueFocusPath?: RequestFlowFocusPath | null;
+  issueFocusEnabled?: boolean;
   onNodeClick?: (entry: Entry) => void;
 }
 
@@ -296,8 +298,9 @@ const RequestRow: React.FC<{
   maxTime: number;
   isFocusPath?: boolean;
   isFocusAnchor?: boolean;
+  focusLabel?: string;
   onClick: () => void;
-}> = ({ request, maxTime, isFocusPath = false, isFocusAnchor = false, onClick }) => {
+}> = ({ request, maxTime, isFocusPath = false, isFocusAnchor = false, focusLabel = 'Likely issue', onClick }) => {
   const statusTone = getStatusTone(request.status);
   const statusColor = getStatusColor(request.status);
   const typeAccent = TYPE_COLOR[request.type] ?? TYPE_COLOR.other;
@@ -328,7 +331,7 @@ const RequestRow: React.FC<{
             <span className="request-flow-request-type-icon" aria-hidden="true">{getTypeIcon(request.type)}</span>
             <span>{TYPE_LABEL[request.type] ?? request.type}</span>
           </span>
-          {isFocusAnchor && <span className="request-flow-request-flag is-likely">Likely issue</span>}
+          {isFocusAnchor && <span className="request-flow-request-flag is-likely">{focusLabel}</span>}
           <span className="request-flow-request-start">+{formatTime(request.startMs)}</span>
           {request.size > 0 && <span className="request-flow-request-bytes">{formatBytes(request.size)}</span>}
         </div>
@@ -356,6 +359,7 @@ const ZoneCard: React.FC<{
   visibleRequestIndexes: Set<number> | null;
   focusNodeIndexSet: Set<number>;
   focusAnchorIndex: number | null;
+  focusLabel: string;
   filterMode: RequestFlowFocusMode;
   collapsed: boolean;
   onToggle: () => void;
@@ -368,6 +372,7 @@ const ZoneCard: React.FC<{
   visibleRequestIndexes,
   focusNodeIndexSet,
   focusAnchorIndex,
+  focusLabel,
   filterMode,
   collapsed,
   onToggle,
@@ -443,6 +448,7 @@ const ZoneCard: React.FC<{
                 maxTime={maxTime}
                 isFocusPath={focusNodeIndexSet.has(request.index)}
                 isFocusAnchor={focusAnchorIndex === request.index}
+                focusLabel={focusLabel}
                 onClick={() => onRequestClick(request.index)}
               />
             ))
@@ -460,11 +466,15 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({
   onFiltersChange,
   focusMode: controlledFocusMode,
   onFocusModeChange,
+  issueFocusPath,
+  issueFocusEnabled = true,
   onNodeClick,
 }) => {
   const searchInputId = useId();
   const flowData = useMemo(() => analyzeFlow(entries), [entries]);
-  const focusPath = useMemo(() => analyzeRequestFlowFocus(entries), [entries]);
+  const computedFocusPath = useMemo(() => analyzeRequestFlowFocus(entries), [entries]);
+  const focusPath = issueFocusEnabled ? issueFocusPath ?? computedFocusPath : null;
+  const focusLabel = focusPath?.confidence === 'low' ? 'Worth checking' : 'Likely issue';
   const focusNodeIndexSet = useMemo(
     () => new Set(focusPath?.nodeIndexes ?? []),
     [focusPath]
@@ -729,6 +739,7 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({
                   visibleRequestIndexes={visibleRequestIndexes}
                   focusNodeIndexSet={focusNodeIndexSet}
                   focusAnchorIndex={focusAnchorIndex}
+                  focusLabel={focusLabel}
                   filterMode={focusMode}
                   collapsed={collapsedZones.has(zone.id)}
                   onToggle={() => toggleZone(zone.id)}
@@ -761,6 +772,7 @@ const RequestFlowDiagram: React.FC<RequestFlowDiagramProps> = ({
               visibleRequestIndexes={visibleRequestIndexes}
               focusNodeIndexSet={focusNodeIndexSet}
               focusAnchorIndex={focusAnchorIndex}
+              focusLabel={focusLabel}
               filterMode={focusMode}
               collapsed={collapsedZones.has(zone.id)}
               onToggle={() => toggleZone(zone.id)}

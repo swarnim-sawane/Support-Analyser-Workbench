@@ -13,6 +13,7 @@ export interface RequestFlowNodePayload {
   isDimmed?: boolean;
   isFocusPath?: boolean;
   isFocusAnchor?: boolean;
+  focusLabel?: string;
   focusSeverity?: 'critical' | 'warning' | 'notice';
   entryIndex: number;
   domainLabel?: string;
@@ -110,7 +111,7 @@ const renderNode = (
     ...(data.isFocusAnchor
       ? [
           {
-            label: 'Likely issue',
+            label: data.focusLabel || 'Likely issue',
             color: focusColor,
           },
         ]
