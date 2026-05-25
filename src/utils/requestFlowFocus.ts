@@ -225,11 +225,12 @@ function isRedirect(entry: Entry): boolean {
 }
 
 function hasBlockedEvidence(entry: Entry): boolean {
+  const diagnosticError = (entry as Entry & { _error?: unknown })._error;
   const searchable = [
     entry.response.statusText,
     entry.response.redirectURL,
     entry.request.url,
-    JSON.stringify((entry as Record<string, unknown>)._error ?? ''),
+    JSON.stringify(diagnosticError ?? ''),
   ].join(' ');
   return entry.response.status === 0 || /\b(cors|blocked|failed|aborted|access-control-allow-origin)\b/i.test(searchable);
 }
