@@ -1,6 +1,7 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import PerformanceScorecard from '../PerformanceScorecard';
 import type { Entry, HarFile } from '../../types/har';
 
@@ -100,8 +101,37 @@ describe('PerformanceScorecard scorecard finding URLs', () => {
     const slowRequestsPanel = slowRequestsHeading.closest('section') as HTMLElement;
 
     expect(analyticsGrid).toHaveClass('is-balanced');
-    expect(within(slowRequestsPanel).getByText('TTFB')).toBeInTheDocument();
-    expect(within(slowRequestsPanel).getByText('TRANSFER')).toBeInTheDocument();
+    expect(within(slowRequestsPanel).getAllByText('TTFB').length).toBeGreaterThan(0);
+    expect(within(slowRequestsPanel).getAllByText(/transfer/i).length).toBeGreaterThan(0);
+  });
+
+  it('opens request details when a top slow request is selected', async () => {
+    const user = userEvent.setup();
+    const slowEntry = buildEntry({
+      time: 4950,
+      request: {
+        ...buildEntry().request,
+        method: 'POST',
+        url: 'https://portal.example.com/ic/builder/rt/Dragon/1.0.309/profile-stage_config.json',
+      },
+      timings: {
+        ...buildEntry().timings,
+        wait: 4400,
+      },
+    });
+    const onSelectRequest = vi.fn();
+
+    render(<PerformanceScorecard harData={buildHar([slowEntry])} onSelectRequest={onSelectRequest} />);
+
+    const slowRequestsPanel = screen.getByRole('heading', { name: /Top slow requests/i }).closest('section') as HTMLElement;
+    const requestButton = within(slowRequestsPanel).getByRole('button', {
+      name: /open request details for POST .*profile-stage_config\.json/i,
+    });
+
+    await user.click(requestButton);
+
+    expect(onSelectRequest).toHaveBeenCalledTimes(1);
+    expect(onSelectRequest).toHaveBeenCalledWith(slowEntry);
   });
 
   it('renders auth finding URL segments as external links while keeping the status prefix visible', () => {

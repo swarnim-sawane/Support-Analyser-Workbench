@@ -18,6 +18,176 @@
 
 ***
 
+## Experimental Support Analyzer Workbench Deployment
+
+The experimental deployment must stay separate from the original HAR Analyzer
+deployment. Do not reuse ports 3000, 4000, 4173, or 4317 for the experiment.
+
+| Service | PM2 Process | Port | Path |
+|---|---|---|---|
+| HAR experimental frontend | `har-exp-frontend` | 3100 | `/refresh/home/Downloads/har-analyzer-exp` |
+| HAR experimental backend | `har-exp-backend` | 4100 | `/refresh/home/Downloads/har-analyzer-exp/backend` |
+| HAR experimental worker | `har-exp-worker` | n/a | `/refresh/home/Downloads/har-analyzer-exp/backend` |
+| Support Workbench experimental frontend | `support-workbench-exp-frontend` | 4174 | `/refresh/home/Downloads/support-workbench-exp` |
+| Support Workbench experimental backend | `support-workbench-exp-backend` | 4318 | `/refresh/home/Downloads/support-workbench-exp/backend` |
+
+**Experimental UI URL:** `http://10.65.39.163:3100`
+**Experimental Workbench embed URL:** `http://10.65.39.163:4174/?embedded=1&theme=dark`
+**Experimental HAR backend URL:** `http://10.65.39.163:4100`
+**Experimental Workbench backend URL:** `http://10.65.39.163:4318`
+
+### Source Branch
+
+The current experimental HAR shell work is pushed from:
+
+```bash
+https://github.com/swarnim-sawane/HAR-File-Analyser.git
+branch: unified-support-workbench
+```
+
+Use the original `main` branch only for the existing production-style HAR
+deployment. Use `unified-support-workbench` for the experimental Support
+Analyzer Workbench.
+
+### Critical VM Rule: No npm install on VCAP
+
+Do not run `npm install`, `npm ci`, or frontend `npm run build` on the VCAP VM.
+Build locally, then copy build artifacts to the VM.
+
+Allowed on VM:
+
+- `git fetch`, `git checkout`, `git pull`
+- PM2 restarts
+- extracting tarballs created locally
+- using already-copied `node_modules`
+- backend `npm run build` only if the Linux dependencies already exist and no package changes were made
+
+Not allowed on VM:
+
+- dependency installation from npm registry
+- frontend Vite builds
+- changing the original 3000/4000 deployment while updating the experiment
+
+### Local Build for Experimental HAR Frontend
+
+Before copying frontend artifacts, set local `.env.production` for the
+experimental ports:
+
+```powershell
+VITE_API_URL=http://10.65.39.163:4100
+VITE_BACKEND_URL=http://10.65.39.163:4100
+VITE_WS_URL=http://10.65.39.163:4100
+VITE_SUPPORT_WORKBENCH_URL=http://10.65.39.163:4174
+```
+
+Then build and copy the frontend:
+
+```powershell
+cd "C:\Users\ssawane\Documents\Work\HAR LATEST\Experimental build\HAR-File-Analyser"
+git checkout unified-support-workbench
+git pull origin unified-support-workbench
+npm run build
+scp -r dist oracle@celvpvm05798.us.oracle.com:/refresh/home/Downloads/har-analyzer-exp/
+```
+
+On the VM:
+
+```bash
+cd /refresh/home/Downloads/har-analyzer-exp
+git fetch origin unified-support-workbench
+git checkout unified-support-workbench
+git pull origin unified-support-workbench
+pm2 restart har-exp-frontend --update-env
+pm2 save
+```
+
+### If Backend Code or Dependencies Changed
+
+If `backend/`, `package.json`, `package-lock.json`, `backend/package.json`, or
+`backend/package-lock.json` changed, do an artifact deployment instead of a
+simple frontend copy.
+
+Local machine:
+
+```powershell
+cd "C:\Users\ssawane\Documents\Work\HAR LATEST\Experimental build\HAR-File-Analyser"
+git checkout unified-support-workbench
+git pull origin unified-support-workbench
+npm run build
+cd backend
+npm run build
+cd ..
+tar -czf har-analyzer-exp-artifacts.tgz dist package.json package-lock.json node_modules backend/package.json backend/package-lock.json backend/node_modules backend/dist shared scripts VM_RUNBOOK.md
+scp har-analyzer-exp-artifacts.tgz oracle@celvpvm05798.us.oracle.com:/refresh/home/Downloads/
+```
+
+VM:
+
+```bash
+cd /refresh/home/Downloads/har-analyzer-exp
+git fetch origin unified-support-workbench
+git checkout unified-support-workbench
+git pull origin unified-support-workbench
+tar -xzf /refresh/home/Downloads/har-analyzer-exp-artifacts.tgz -C /refresh/home/Downloads/har-analyzer-exp
+pm2 restart har-exp-backend --update-env
+pm2 restart har-exp-frontend --update-env
+pm2 restart har-exp-worker --update-env
+pm2 save
+```
+
+### Experimental HAR Backend .env Minimums
+
+```bash
+PORT=4100
+MONGODB_URL=mongodb://localhost:27017/har-analyzer-exp
+REDIS_HOST=localhost
+REDIS_PORT=6379
+HAR_QUEUE_NAME=har-processing-exp
+LOG_QUEUE_NAME=log-processing-exp
+UPLOAD_DIR=/refresh/home/Downloads/har-analyzer-exp/runtime/uploads
+PROCESSED_DIR=/refresh/home/Downloads/har-analyzer-exp/runtime/processed
+CORS_ORIGIN=http://10.65.39.163:3100
+SUPPORT_WORKBENCH_API_URL=http://localhost:4318
+QDRANT_URL=http://localhost:6333
+HTTPS_PROXY=http://www-proxy-phx.oraclecorp.com:80
+HTTP_PROXY=http://www-proxy-phx.oraclecorp.com:80
+NO_PROXY=localhost,127.0.0.1,10.65.39.163,celvpvm05798.us.oracle.com
+```
+
+### Experimental Verification
+
+Run these after every experimental deploy:
+
+```bash
+curl -I http://localhost:3100
+curl -s http://localhost:4100/health
+curl -s http://localhost:4318/api/health/oca
+curl -I "http://localhost:4174/?embedded=1&theme=dark"
+pm2 list
+```
+
+Expected PM2 processes online:
+
+- `har-exp-backend`
+- `har-exp-worker`
+- `har-exp-frontend`
+- `support-workbench-exp-backend`
+- `support-workbench-exp-frontend`
+
+If files uploaded in Visual Analysis do not appear in AI Diagnosis, check:
+
+```bash
+grep SUPPORT_WORKBENCH_API_URL /refresh/home/Downloads/har-analyzer-exp/backend/.env
+grep -o "10\.65\.39\.163:4174\|localhost:4173" /refresh/home/Downloads/har-analyzer-exp/dist/assets/*.js | sort | uniq -c
+pm2 logs har-exp-backend --lines 100
+pm2 logs support-workbench-exp-backend --lines 100
+```
+
+The frontend bundle must reference `10.65.39.163:4174`, not `localhost:4173`,
+for the experimental AI Diagnosis iframe.
+
+***
+
 ## Daily Token Refresh (OCA expires ~1hr)
 
 ```bash

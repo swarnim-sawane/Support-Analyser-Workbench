@@ -269,7 +269,12 @@ async function readArchiveEntries(archiveFile: File): Promise<ArchiveEntrySummar
 
 function inferArchiveChildMediaType(fileName: string): string {
   const normalizedName = fileName.toLowerCase();
-  if (normalizedName.endsWith('.json') || normalizedName.endsWith('.har') || normalizedName.endsWith('.oc')) return 'application/json';
+  if (
+    normalizedName.endsWith('.json') ||
+    normalizedName.endsWith('.har') ||
+    normalizedName.endsWith('.oc') ||
+    normalizedName.endsWith('.ocp')
+  ) return 'application/json';
   if (normalizedName.endsWith('.zip')) return 'application/x-zip-compressed';
   if (normalizedName.endsWith('.pdf')) return 'application/pdf';
   if (normalizedName.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';

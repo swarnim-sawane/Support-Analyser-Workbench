@@ -35,6 +35,15 @@ type UnifiedUploaderMockProps = {
   onOpenExistingRecentFile?: (file: { name: string; fileType: 'har' | 'log' }) => boolean | Promise<boolean>;
 };
 
+function createSizedFile(parts: BlobPart[], fileName: string, size: number, options?: FilePropertyBag): File {
+  const file = new File(parts, fileName, options);
+  Object.defineProperty(file, 'size', {
+    configurable: true,
+    value: size,
+  });
+  return file;
+}
+
 vi.mock('./components/UnifiedUploader', () => ({
   default: ({ onHarFileUpload, onLogFileUpload, onBasicFileUpload, onOpenExistingRecentFile }: UnifiedUploaderMockProps) => (
     <div>
@@ -91,6 +100,28 @@ vi.mock('./components/UnifiedUploader', () => ({
         }}
       >
         Load two HAR files
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const sourceFile = createSizedFile(
+            ['{"log":{"entries":[{"startedDateTime":"2026-01-01T00:00:00.000Z","request":{},"response":{}}]}}'],
+            'large-customer-capture.har',
+            101_711_872,
+            { type: 'application/json' }
+          );
+          void onHarFileUpload?.({
+            success: true,
+            fileId: 'large-har-id',
+            jobId: 'large-har-job-id',
+            fileName: 'large-customer-capture.har',
+            fileSize: sourceFile.size,
+            hash: 'large-har-hash',
+            message: 'ok',
+          }, sourceFile);
+        }}
+      >
+        Load large HAR
       </button>
       <button
         type="button"
@@ -762,6 +793,66 @@ describe('App documentation navigation', () => {
     expect(visualAnalysis).toBeVisible();
   });
 
+  it('syncs large HAR captures to AI Diagnosis instead of treating them like oversized archive bundles', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /load large har/i }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'http://localhost:4000/api/support-workbench/session/support-session-1/attachments',
+        expect.objectContaining({
+          method: 'POST',
+          credentials: 'include',
+          body: expect.any(FormData),
+        })
+      );
+    });
+
+    const attachmentCall = vi.mocked(globalThis.fetch).mock.calls.find(([input]) =>
+      String(input).includes('/api/support-workbench/session/support-session-1/attachments')
+    );
+    const uploadedFiles = (attachmentCall?.[1]?.body as FormData).getAll('files') as File[];
+    expect(uploadedFiles.map(file => file.name)).toEqual(['large-customer-capture.har']);
+  });
+
+  it('shows zero files in the toolbar when all analyzer tabs are closed', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /load mock har/i }));
+
+    const analysisToolbar = screen.getByRole('region', { name: /analysis toolbar/i });
+    expect(analysisToolbar).toHaveTextContent('1 file');
+
+    await user.click(screen.getByRole('button', { name: /close mock\.har/i }));
+
+    expect(screen.getByRole('region', { name: /no analyzer tabs open/i })).toBeInTheDocument();
+    expect(analysisToolbar).toHaveTextContent('0 files');
+    expect(analysisToolbar).not.toHaveTextContent('1 file');
+  });
+
+  it('keeps the embedded AI Diagnosis frame loaded when the shell theme changes', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /load mock har/i }));
+    await user.click(screen.getByRole('button', { name: /ai diagnosis/i }));
+
+    const aiFrame = screen.getByTitle(/ai diagnosis/i) as HTMLIFrameElement;
+    const initialFrameSrc = aiFrame.getAttribute('src');
+    const postMessageSpy = vi.spyOn(aiFrame.contentWindow as Window, 'postMessage');
+
+    await user.click(screen.getByRole('radio', { name: /dark theme/i }));
+
+    expect(aiFrame.getAttribute('src')).toBe(initialFrameSrc);
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      { type: 'support-workbench:set-theme', theme: 'dark' },
+      'http://localhost:4173'
+    );
+  });
+
   it('places Analyzer, HAR Compare, and HAR Sanitizer in the tools menu without showing a workspace drawer', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -1254,7 +1345,7 @@ describe('App documentation navigation', () => {
     expect(pocBadge.closest('.app-header-actions')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /documentation/i }));
-    expect(screen.getByRole('heading', { name: /har file analyzer documentation/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /support analyzer workbench documentation/i })).toBeInTheDocument();
     expect(screen.getByText(/proof of concept/i)).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: /back to analyzer/i })[0]);
@@ -1266,11 +1357,11 @@ describe('App documentation navigation', () => {
     render(<App />);
     const pocBadge = screen.getByText(/proof of concept/i);
 
-    expect(screen.getByRole('heading', { name: /har file analyzer documentation/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /support analyzer workbench documentation/i })).toBeInTheDocument();
     expect(pocBadge).toBeInTheDocument();
     expect(pocBadge.closest('.app-header-center')).not.toBeNull();
     expect(pocBadge.closest('.app-header-actions')).toBeNull();
-    expect(screen.getByRole('heading', { name: /recommended investigation workflow/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /common scenarios/i })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: /documentation section navigation/i })).toBeInTheDocument();
   });
 
@@ -1279,18 +1370,18 @@ describe('App documentation navigation', () => {
     setPath('/docs');
     render(<App />);
 
-    const targetLink = screen.getByRole('link', { name: /main features/i });
+    const targetLink = screen.getByRole('link', { name: /supported files and routing/i });
     await user.click(targetLink);
 
-    expect(window.location.hash).toBe('#main-features');
+    expect(window.location.hash).toBe('#supported-file-types');
     expect(targetLink).toHaveAttribute('aria-current', 'location');
   });
 
   it('highlights the matching sidebar link when docs loads with a hash', () => {
-    setPath('/docs#main-features');
+    setPath('/docs#supported-file-types');
     render(<App />);
 
-    expect(screen.getByRole('link', { name: /main features/i })).toHaveAttribute('aria-current', 'location');
+    expect(screen.getByRole('link', { name: /supported files and routing/i })).toHaveAttribute('aria-current', 'location');
   });
 
   it('updates the visible page when browser history emits popstate', async () => {
@@ -1298,7 +1389,7 @@ describe('App documentation navigation', () => {
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: /documentation/i }));
-    expect(screen.getByRole('heading', { name: /har file analyzer documentation/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /support analyzer workbench documentation/i })).toBeInTheDocument();
 
     act(() => {
       setPath('/');
@@ -1313,14 +1404,14 @@ describe('App documentation navigation', () => {
     setPath('/docs');
     render(<App />);
 
-    await user.click(screen.getByRole('link', { name: /main features/i }));
-    expect(screen.getByRole('link', { name: /main features/i })).toHaveAttribute('aria-current', 'location');
+    await user.click(screen.getByRole('link', { name: /supported files and routing/i }));
+    expect(screen.getByRole('link', { name: /supported files and routing/i })).toHaveAttribute('aria-current', 'location');
 
     act(() => {
-      setPath('/docs#what-this-tool-does');
+      setPath('/docs#what-this-product-is');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
 
-    expect(screen.getByRole('link', { name: /what this tool does/i })).toHaveAttribute('aria-current', 'location');
+    expect(screen.getByRole('link', { name: /what this product is/i })).toHaveAttribute('aria-current', 'location');
   });
 });

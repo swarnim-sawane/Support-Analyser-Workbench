@@ -22,6 +22,7 @@ import {
 
 interface ScorecardProps {
   harData: HarFile;
+  onSelectRequest?: (entry: Entry) => void;
 }
 
 type Level = 'err' | 'warn' | 'ok' | 'info';
@@ -694,7 +695,7 @@ const FindingCard: React.FC<{ finding: Finding }> = ({ finding }) => (
   </article>
 );
 
-const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
+const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData, onSelectRequest }) => {
   const { score, data, findings, scoreRules } = useMemo(() => {
     const entries = harData.log.entries;
     if (entries.length === 0) {
@@ -893,43 +894,61 @@ const PerformanceScorecard: React.FC<ScorecardProps> = ({ harData }) => {
         </header>
         <div className="scorecard-section-divider" />
 
-        <div className="scorecard-panel-list">
+        <div className="scorecard-slow-request-table" role="list" aria-label="Top slow requests">
+          <div className="scorecard-slow-request-header" aria-hidden="true">
+            <span>Request</span>
+            <span>STATUS</span>
+            <span>TTFB</span>
+            <span>TRANSFER</span>
+            <span>Time</span>
+          </div>
           {slowTop.map((entry) => {
             const time = entry.time ?? 0;
-            const badgeLabel = entry.response.status >= 400 ? 'Error' : entry.response.status >= 300 ? 'Redirect' : 'Observed';
             const badgeTone = entry.response.status >= 400 ? 'danger' : 'info';
             const barWidth = `${Math.max(10, Math.round((time / maxTime) * 100))}%`;
+            const requestKey = `${entry.request.method}-${entry.request.url}-${entry.startedDateTime}`;
+            const requestRowContent = (
+              <>
+                <span className="scorecard-slow-request-main">
+                  <strong title={entry.request.url}>{getPathLabel(entry.request.url)}</strong>
+                  <span>{entry.request.method} · {fhost(entry.request.url)}</span>
+                  <span className="scorecard-traffic-bar" aria-hidden="true">
+                    <span
+                      className={`scorecard-traffic-bar-fill tone-${time > 1400 ? 'warning' : 'info'}`}
+                      style={{ width: barWidth } as React.CSSProperties}
+                    />
+                  </span>
+                </span>
+                <span className={`scorecard-inline-pill tone-${badgeTone}`}>HTTP {entry.response.status || 0}</span>
+                <span className="scorecard-slow-request-metric">
+                  <small>TTFB</small>
+                  <strong>{fmtT(entry.timings.wait ?? 0)}</strong>
+                </span>
+                <span className="scorecard-slow-request-metric">
+                  <small>Transfer</small>
+                  <strong>{fmtB(getTransferSize(entry))}</strong>
+                </span>
+                <span className="scorecard-traffic-time">{fmtT(time)}</span>
+              </>
+            );
+
+            if (onSelectRequest) {
+              return (
+                <button
+                  key={requestKey}
+                  type="button"
+                  className="scorecard-slow-request-row is-clickable"
+                  onClick={() => onSelectRequest(entry)}
+                  aria-label={`Open request details for ${entry.request.method} ${entry.request.url}`}
+                >
+                  {requestRowContent}
+                </button>
+              );
+            }
 
             return (
-              <article key={`${entry.request.method}-${entry.request.url}-${entry.startedDateTime}`} className="scorecard-traffic-card">
-                <div className="scorecard-traffic-head">
-                  <strong title={entry.request.url}>{getPathLabel(entry.request.url)}</strong>
-                  <div className="scorecard-traffic-metrics">
-                    <span className="scorecard-traffic-time">{fmtT(time)}</span>
-                    <span className={`scorecard-inline-pill tone-${badgeTone}`}>{badgeLabel}</span>
-                  </div>
-                </div>
-                <span className="scorecard-traffic-subtitle">{fhost(entry.request.url)}</span>
-                <div className="scorecard-traffic-bar">
-                  <div
-                    className={`scorecard-traffic-bar-fill tone-${time > 1400 ? 'warning' : 'info'}`}
-                    style={{ width: barWidth } as React.CSSProperties}
-                  />
-                </div>
-                <div className="scorecard-domain-grid scorecard-traffic-grid">
-                  <div>
-                    <span>STATUS</span>
-                    <strong>HTTP {entry.response.status || 0}</strong>
-                  </div>
-                  <div>
-                    <span>TTFB</span>
-                    <strong>{fmtT(entry.timings.wait ?? 0)}</strong>
-                  </div>
-                  <div>
-                    <span>TRANSFER</span>
-                    <strong>{fmtB(getTransferSize(entry))}</strong>
-                  </div>
-                </div>
+              <article key={requestKey} className="scorecard-slow-request-row">
+                {requestRowContent}
               </article>
             );
           })}

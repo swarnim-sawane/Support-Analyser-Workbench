@@ -24,7 +24,7 @@ export interface UploadFileClassification {
   suggestedToolName: string;
 }
 
-const HAR_FILE_EXTENSIONS = ['.har', '.oc'] as const;
+const HAR_FILE_EXTENSIONS = ['.har', '.oc', '.ocp'] as const;
 const LOG_FILE_EXTENSIONS = ['.log', '.txt', '.out'] as const;
 const TEXT_FILE_EXTENSIONS = [
   '.trc',

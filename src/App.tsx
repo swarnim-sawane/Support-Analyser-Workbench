@@ -66,7 +66,9 @@ const BACKEND_URL =
 const SUPPORT_WORKBENCH_URL =
   import.meta.env.VITE_SUPPORT_WORKBENCH_URL ||
   'http://localhost:4173';
-const SUPPORT_WORKBENCH_DIRECT_SYNC_LIMIT_BYTES = 32 * 1024 * 1024;
+const SUPPORT_WORKBENCH_FILE_DIRECT_SYNC_LIMIT_BYTES = 256 * 1024 * 1024;
+const SUPPORT_WORKBENCH_ARCHIVE_DIRECT_SYNC_LIMIT_BYTES = 32 * 1024 * 1024;
+const SUPPORT_WORKBENCH_THEME_MESSAGE_TYPE = 'support-workbench:set-theme';
 
 type AppPath = '/' | '/docs';
 type WorkspaceMode = 'analyzer' | 'support';
@@ -149,6 +151,15 @@ const buildSupportWorkbenchUrl = (baseUrl: string, sessionId: string | null, the
   }
 };
 
+const getSupportWorkbenchMessageTarget = (baseUrl: string): string => {
+  try {
+    const fallbackBase = typeof window !== 'undefined' ? window.location.href : 'http://localhost';
+    return new URL(baseUrl, fallbackBase).origin;
+  } catch {
+    return '*';
+  }
+};
+
 const formatCaseFileSize = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -173,20 +184,20 @@ const getSupportFileSyncKey = (file: File): string =>
 
 const shouldDirectSyncToSupportWorkbench = (
   file: File,
-  classification?: Pick<UploadFileClassification, 'analyzerKind'>,
+  classification?: { analyzerKind: AnalyzerFileKind },
 ): boolean => {
-  if (classification?.analyzerKind === 'archive' && file.size > SUPPORT_WORKBENCH_DIRECT_SYNC_LIMIT_BYTES) {
-    return false;
+  if (classification?.analyzerKind === 'archive') {
+    return file.size <= SUPPORT_WORKBENCH_ARCHIVE_DIRECT_SYNC_LIMIT_BYTES;
   }
 
-  return file.size <= SUPPORT_WORKBENCH_DIRECT_SYNC_LIMIT_BYTES;
+  return file.size <= SUPPORT_WORKBENCH_FILE_DIRECT_SYNC_LIMIT_BYTES;
 };
 
 const classifyCaseFileKind = (fileName: string, mediaType?: string): string => {
   const normalizedName = fileName.toLowerCase();
   const normalizedType = mediaType?.toLowerCase() ?? '';
 
-  if (normalizedName.endsWith('.har') || normalizedName.endsWith('.oc')) return 'HAR';
+  if (normalizedName.endsWith('.har') || normalizedName.endsWith('.oc') || normalizedName.endsWith('.ocp')) return 'HAR';
   if (normalizedName.endsWith('.log') || normalizedName.endsWith('.txt')) return 'Log';
   if (normalizedName.endsWith('.json') || normalizedType.includes('json')) return 'JSON';
   if (normalizedName.endsWith('.zip') || normalizedType.includes('zip')) return 'ZIP';
@@ -262,7 +273,7 @@ const createCaseFileSummary = (
   extension: classification?.extension || getCaseFileExtension(sourceFile?.name || result.fileName),
   classificationConfidence: classification?.classificationConfidence || 'high',
   classificationReasons: classification?.classificationReasons || ['Deep visual analyzer matched'],
-  suggestedToolName: classification?.suggestedToolName || (sourceFile?.name.toLowerCase().endsWith('.har') ? 'analyze_har_file' : 'read_logs'),
+  suggestedToolName: classification?.suggestedToolName || (/\.(har|oc|ocp)$/i.test(sourceFile?.name || result.fileName) ? 'analyze_har_file' : 'read_logs'),
 });
 
 const caseFileMatchesAnalyzerTarget = (
@@ -352,6 +363,11 @@ const App: React.FC = () => {
   const [activeCaseFileId, setActiveCaseFileId] = useState<string | null>(null);
   const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [supportWorkbenchFrameUrl, setSupportWorkbenchFrameUrl] = useState(() =>
+    buildSupportWorkbenchUrl(SUPPORT_WORKBENCH_URL, null, theme)
+  );
+  const currentThemeRef = useRef(theme);
+  const supportWorkbenchFrameRef = useRef<HTMLIFrameElement | null>(null);
   const supportSessionPromiseRef = useRef<Promise<string> | null>(null);
   const supportFileSyncPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
   const syncedSupportFileKeysRef = useRef<Set<string>>(new Set());
@@ -364,12 +380,34 @@ const App: React.FC = () => {
   const LOG_STATUS_POLL_INTERVAL_MS = 2000;
   const LOG_STATUS_TIMEOUT_MS = 180000;
 
+  currentThemeRef.current = theme;
+
   useLayoutEffect(() => {
     applyTheme(theme, {
       doc: document,
       storage: window.localStorage,
     });
   }, [theme]);
+
+  const postSupportWorkbenchTheme = useCallback((nextTheme: ThemeMode) => {
+    const frameWindow = supportWorkbenchFrameRef.current?.contentWindow;
+    if (!frameWindow) return;
+
+    frameWindow.postMessage(
+      { type: SUPPORT_WORKBENCH_THEME_MESSAGE_TYPE, theme: nextTheme },
+      getSupportWorkbenchMessageTarget(SUPPORT_WORKBENCH_URL)
+    );
+  }, []);
+
+  useEffect(() => {
+    setSupportWorkbenchFrameUrl(
+      buildSupportWorkbenchUrl(SUPPORT_WORKBENCH_URL, supportSessionId, currentThemeRef.current)
+    );
+  }, [supportSessionId]);
+
+  useEffect(() => {
+    postSupportWorkbenchTheme(theme);
+  }, [postSupportWorkbenchTheme, theme]);
 
   useLayoutEffect(() => {
     if (activeTool !== 'compare') return;
@@ -1103,10 +1141,9 @@ const App: React.FC = () => {
     (activeCaseFileId ? caseFiles.find(file => file.id === activeCaseFileId) : null) ??
     caseFiles[caseFiles.length - 1] ??
     null;
-  const caseFilesLabel = `${caseFiles.length} file${caseFiles.length === 1 ? '' : 's'}`;
   const analyzerFileTabs = buildAnalyzerFileTabs(harTabs, logTabs, basicTabs);
+  const openAnalyzerFilesLabel = `${analyzerFileTabs.length} file${analyzerFileTabs.length === 1 ? '' : 's'}`;
   const isAnalyzerToolActive = activeTool === 'har' || activeTool === 'console' || activeTool === 'basic';
-  const supportWorkbenchFrameUrl = buildSupportWorkbenchUrl(SUPPORT_WORKBENCH_URL, supportSessionId, theme);
   const headerTitle = isDocsRoute
     ? 'Documentation'
     : 'Support Analyzer Workbench';
@@ -1136,6 +1173,16 @@ const App: React.FC = () => {
 
   const handleWorkspaceChange = (workspace: WorkspaceMode) => {
     setActiveWorkspace(workspace);
+    if (workspace === 'support') {
+      const syncableFiles = caseFiles.flatMap(file =>
+        file.sourceFile && shouldDirectSyncToSupportWorkbench(file.sourceFile, { analyzerKind: file.analyzerKind })
+          ? [file.sourceFile]
+          : []
+      );
+      if (syncableFiles.length) {
+        void syncFilesToSupportWorkbench(syncableFiles);
+      }
+    }
     if (pathname !== '/') {
       navigateTo('/');
     }
@@ -1429,7 +1476,7 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
-              <span className="analysis-file-count">{caseFilesLabel}</span>
+              <span className="analysis-file-count">{openAnalyzerFilesLabel}</span>
             </div>
             <div className="analysis-switcher case-files-mode-controls" aria-label="Analysis mode">
               <button
@@ -1743,9 +1790,11 @@ const App: React.FC = () => {
             hidden={activeWorkspace !== 'support'}
           >
             <iframe
+              ref={supportWorkbenchFrameRef}
               className="support-workbench-frame"
               title="AI Diagnosis"
               src={supportWorkbenchFrameUrl}
+              onLoad={() => postSupportWorkbenchTheme(theme)}
             />
           </section>
         )}

@@ -341,7 +341,10 @@ const HarTabContent: React.FC<HarTabContentProps> = ({
 
           {activeTab === 'scorecard' && (
             <div className="scorecard-wrapper har-tab-scroll-panel">
-              <PerformanceScorecard harData={harState.harData} />
+              <PerformanceScorecard
+                harData={harState.harData}
+                onSelectRequest={openEntryFromFlow}
+              />
             </div>
           )}
 

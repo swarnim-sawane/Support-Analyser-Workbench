@@ -5,9 +5,23 @@ import { TYPE_COLOR } from '../utils/requestFlowAnalyzer';
 export interface RequestFlowNodePayload {
   type: string;
   status: number;
+  statusText?: string;
   method: string;
   url: string;
   time?: number;
+  startedDateTime?: string;
+  mimeType?: string;
+  responseSize?: number;
+  requestSize?: number;
+  timings?: {
+    blocked?: number;
+    dns?: number;
+    connect?: number;
+    ssl?: number;
+    send?: number;
+    wait?: number;
+    receive?: number;
+  };
   isSlow?: boolean;
   isCritical?: boolean;
   isDimmed?: boolean;
@@ -23,6 +37,8 @@ export interface RequestFlowNodePayload {
   productLabel?: string;
   traceRole?: 'root' | 'primary' | 'branch' | 'terminal';
   onClick?: () => void;
+  onPreviewOpen?: () => void;
+  onPreviewClose?: () => void;
 }
 
 const getStatusColor = (status: number) => {
@@ -52,6 +68,15 @@ const handleNodeKeyDown = (
   }
 };
 
+const handleNodeBlur = (
+  event: React.FocusEvent<HTMLDivElement>,
+  onPreviewClose?: () => void
+) => {
+  if (!onPreviewClose) return;
+  if (event.currentTarget.contains(event.relatedTarget)) return;
+  onPreviewClose();
+};
+
 const handleStyle = (accent: string): React.CSSProperties => ({
   width: 10,
   height: 10,
@@ -79,6 +104,117 @@ const getTraceBadge = (traceRole?: RequestFlowNodePayload['traceRole'], status?:
     default:
       return null;
   }
+};
+
+const getHostLabel = (url: string) => {
+  try {
+    return new URL(url).hostname || 'unknown host';
+  } catch {
+    return 'unknown host';
+  }
+};
+
+const formatBytes = (bytes?: number) => {
+  if (!Number.isFinite(bytes) || bytes === undefined || bytes < 0) return 'Unknown';
+  if (bytes === 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
+const formatMilliseconds = (value?: number) =>
+  Number.isFinite(value) && value !== undefined ? `${Math.round(value)}ms` : 'n/a';
+
+const getIssueHint = (data: RequestFlowNodePayload) => {
+  if (data.status === 0) return 'No response captured';
+  if (data.status >= 500) return 'Server-side failure';
+  if (data.status >= 400 && (data.responseSize === 0 || data.responseSize === undefined)) {
+    return 'Missing response body';
+  }
+  if (data.status >= 400) return 'Client-side HTTP error';
+  if (data.isSlow) return 'Slow request';
+  return null;
+};
+
+const RequestPreviewCard = ({
+  data,
+  pathLabel,
+}: {
+  data: RequestFlowNodePayload;
+  pathLabel: string;
+}) => {
+  const issueHint = getIssueHint(data);
+  const hostLabel = getHostLabel(data.url);
+  const waitTime = data.timings?.wait;
+  const receiveTime = data.timings?.receive;
+
+  return (
+    <div
+      className="request-flow-node-preview"
+      role="tooltip"
+      id={`request-flow-node-preview-${data.entryIndex}`}
+      aria-label={`${data.method} ${pathLabel} ${data.status} request preview`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="request-flow-node-preview-header">
+        <div>
+          <span>Request preview</span>
+          <strong>
+            {data.method} <em>{data.status}</em>
+          </strong>
+        </div>
+        {issueHint ? <mark>{issueHint}</mark> : null}
+      </div>
+
+      <div className="request-flow-node-preview-url" title={data.url}>
+        <strong>{pathLabel}</strong>
+        <span>{hostLabel}</span>
+      </div>
+
+      <dl className="request-flow-node-preview-grid">
+        <div>
+          <dt>Status</dt>
+          <dd>
+            {data.status}
+            {data.statusText ? ` ${data.statusText}` : ''}
+          </dd>
+        </div>
+        <div>
+          <dt>Total time</dt>
+          <dd>{formatMilliseconds(data.time)}</dd>
+        </div>
+        <div>
+          <dt>Size</dt>
+          <dd>{formatBytes(data.responseSize)}</dd>
+        </div>
+        <div>
+          <dt>Type</dt>
+          <dd>{data.mimeType || data.type}</dd>
+        </div>
+      </dl>
+
+      <div className="request-flow-node-preview-timing" aria-label="Timing summary">
+        <span>
+          Wait <strong>{formatMilliseconds(waitTime)}</strong>
+        </span>
+        <span>
+          Receive <strong>{formatMilliseconds(receiveTime)}</strong>
+        </span>
+      </div>
+
+      <div className="request-flow-node-preview-footer">
+        Click node for full analyzer details
+      </div>
+    </div>
+  );
 };
 
 const renderNode = (
@@ -135,9 +271,15 @@ const renderNode = (
       role={isInteractive ? 'button' : undefined}
       tabIndex={isInteractive ? 0 : undefined}
       aria-label={isInteractive ? `Open in Analyzer ${data.method} ${pathLabel} ${data.status}` : undefined}
+      aria-describedby={`request-flow-node-preview-${data.entryIndex}`}
       onClick={data.onClick}
       onKeyDown={(event) => handleNodeKeyDown(event, data.onClick)}
+      onMouseEnter={data.onPreviewOpen}
+      onMouseLeave={data.onPreviewClose}
+      onFocus={data.onPreviewOpen}
+      onBlur={(event) => handleNodeBlur(event, data.onPreviewClose)}
       style={{
+        position: 'relative',
         padding: '12px 16px',
         borderRadius: '10px',
         background: options.surface || 'var(--bg-primary)',
@@ -274,6 +416,8 @@ const renderNode = (
           </span>
         )}
       </div>
+
+      <RequestPreviewCard data={data} pathLabel={pathLabel} />
 
       <Handle type="source" position={Position.Right} style={handleStyle(options.accent)} />
     </div>

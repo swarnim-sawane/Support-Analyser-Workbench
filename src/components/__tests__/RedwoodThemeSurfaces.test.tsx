@@ -43,7 +43,7 @@ describe('Redwood theme surface smoke tests', () => {
     render(<DocumentationPage onBackToAnalyzer={vi.fn()} />);
 
     expect(document.documentElement.dataset.theme).toBe('redwood');
-    expect(screen.getByRole('heading', { name: /har file analyzer documentation/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /support analyzer workbench documentation/i })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: /documentation section navigation/i })).toBeInTheDocument();
   });
 

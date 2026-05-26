@@ -1,4 +1,5 @@
 import {
+  HAR_FILE_INPUT_ACCEPT,
   classifyUploadFile,
   detectUploadFileType,
 } from '../uploadFileTypes';
@@ -60,6 +61,13 @@ describe('uploadFileTypes', () => {
     const detected = await detectUploadFileType(makeFile(makeHarJson(), 'capture.oc'));
 
     expect(detected).toBe('har');
+  });
+
+  it('treats Analysis Portal .ocp files as HAR even without a useful mime type', async () => {
+    const detected = await detectUploadFileType(makeFile(makeHarJson(), 'capture.ocp'));
+
+    expect(detected).toBe('har');
+    expect(HAR_FILE_INPUT_ACCEPT).toContain('.ocp');
   });
 
   it('keeps HAR-shaped .json uploads classified as HAR', async () => {

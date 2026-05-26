@@ -366,6 +366,62 @@ describe('RequestFlowGraphView', () => {
     expect(handleNodeClick).toHaveBeenCalledWith(entries[0]);
   });
 
+  it('renders request details in node preview cards for scattered view hover access', async () => {
+    const user = userEvent.setup();
+    const entries: Entry[] = [
+      makeEntry({
+        request: {
+          ...makeEntry().request,
+          method: 'POST',
+          url: 'https://portal.example.com/api/orders?id=42',
+          bodySize: 348,
+        },
+        response: {
+          ...makeEntry().response,
+          status: 404,
+          statusText: 'Not Found',
+          bodySize: 0,
+          content: { size: 0, mimeType: 'application/json' },
+        },
+        time: 379,
+        timings: {
+          blocked: 1,
+          dns: 2,
+          connect: 4,
+          ssl: 0,
+          send: 5,
+          wait: 340,
+          receive: 27,
+        },
+      }),
+    ];
+
+    renderGraphView({ entries });
+
+    const preview = screen.getByRole('tooltip', {
+      name: /POST \/api\/orders\?id=42 404 request preview/i,
+    });
+
+    expect(preview).toHaveTextContent('Request preview');
+    expect(preview).toHaveTextContent('POST 404');
+    expect(preview).toHaveTextContent('/api/orders?id=42');
+    expect(preview).toHaveTextContent('portal.example.com');
+    expect(preview).toHaveTextContent('404 Not Found');
+    expect(preview).toHaveTextContent('379ms');
+    expect(preview).toHaveTextContent('0 B');
+    expect(preview).toHaveTextContent('application/json');
+    expect(preview).toHaveTextContent('Wait 340ms');
+    expect(preview).toHaveTextContent('Receive 27ms');
+    expect(preview).toHaveTextContent('Missing response body');
+
+    const requestNode = screen.getByRole('button', { name: /open in analyzer post/i });
+    expect(screen.getByTestId('react-flow-node')).toHaveAttribute('data-node-style-z-index', '3');
+
+    await user.hover(requestNode);
+
+    expect(screen.getByTestId('react-flow-node')).toHaveAttribute('data-node-style-z-index', '1000');
+  });
+
   it('auto-focuses the likely issue path and can restore the normal graph', async () => {
     const user = userEvent.setup();
     const entries: Entry[] = [

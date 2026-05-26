@@ -501,7 +501,7 @@ const UnifiedUploader: React.FC<UnifiedUploaderProps> = ({
 
             {/* Supported type pills */}
             <div className="unified-type-badges">
-              <span className="unified-type-badge unified-badge-har">.har / .oc</span>
+              <span className="unified-type-badge unified-badge-har">.har / .oc / .ocp</span>
               <span className="unified-type-badge unified-badge-log">.log / .txt</span>
               <span className="unified-type-badge unified-badge-json">.json</span>
               <span className="unified-type-badge unified-badge-log">.trc / .dmp</span>

@@ -152,9 +152,18 @@ function buildGraphElements(
       data: {
         type,
         status: request?.status ?? entry.response.status,
+        statusText: entry.response.statusText,
         method: request?.method ?? entry.request.method,
         url: request?.url ?? entry.request.url,
         time: request?.time ?? entry.time,
+        startedDateTime: entry.startedDateTime,
+        mimeType: entry.response.content?.mimeType,
+        responseSize:
+          typeof entry.response.content?.size === 'number' && entry.response.content.size >= 0
+            ? entry.response.content.size
+            : entry.response.bodySize,
+        requestSize: entry.request.bodySize,
+        timings: entry.timings,
         isSlow: request?.isSlow ?? (entry.time || 0) >= flowData.p90,
         entryIndex: index,
         domainLabel: domainMeta?.domainLabel || domain,
@@ -261,6 +270,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
   const hasAutoFitFocusRef = useRef<string | null>(null);
   const [focusLikelyIssue, setFocusLikelyIssue] = useState(true);
   const [selectedErrorNodeId, setSelectedErrorNodeId] = useState<string | null>(null);
+  const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     onNodeClickRef.current = onNodeClick;
@@ -336,6 +346,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
 
   useEffect(() => {
     setSelectedErrorNodeId(null);
+    setPreviewNodeId(null);
   }, [entries]);
 
   useEffect(() => {
@@ -409,6 +420,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
         const isFocusPath = isIssueFocused && focusNodeIdSet.has(node.id);
         const isFocusAnchor = isIssueFocused && node.id === focusAnchorNodeId;
         const isErrorJumpSelected = selectedErrorNodeId === node.id;
+        const isPreviewOpen = previewNodeId === node.id;
         const matchesFlowVisibility = focusedNodeIdSet.has(node.id);
         const isCritical = Boolean(isFocusPath || isErrorJumpSelected);
         const isDimmed = !matchesFlowVisibility || (isIssueFocused && !isFocusPath && !isErrorJumpSelected);
@@ -426,10 +438,12 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
             focusSeverity: focusPath?.severity,
             focusStep: isFocusPath ? focusStepByNodeId.get(node.id) : undefined,
             focusReason: isFocusAnchor ? focusPrimaryReason : undefined,
+            onPreviewOpen: () => setPreviewNodeId(node.id),
+            onPreviewClose: () => setPreviewNodeId((current) => current === node.id ? null : current),
           },
           style: {
             ...(node.style || {}),
-            zIndex: isErrorJumpSelected ? 4 : isFocusAnchor ? 3 : isFocusPath ? 2 : 1,
+            zIndex: isPreviewOpen ? 1000 : isErrorJumpSelected ? 4 : isFocusAnchor ? 3 : isFocusPath ? 2 : 1,
           },
         };
       }),
@@ -444,6 +458,7 @@ const RequestFlowGraphView: React.FC<RequestFlowGraphViewProps> = ({
       focusStepByNodeId,
       focusPrimaryReason,
       selectedErrorNodeId,
+      previewNodeId,
     ]
   );
 
