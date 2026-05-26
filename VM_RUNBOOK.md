@@ -45,9 +45,16 @@ https://github.com/swarnim-sawane/HAR-File-Analyser.git
 branch: unified-support-workbench
 ```
 
+The embedded AI Diagnosis workbench is pushed from:
+
+```bash
+https://github.com/swarnim-sawane/support-workbench.git
+branch: uat
+```
+
 Use the original `main` branch only for the existing production-style HAR
 deployment. Use `unified-support-workbench` for the experimental Support
-Analyzer Workbench.
+Analyzer Workbench. Use `uat` for the experimental Support Workbench embed.
 
 ### Critical VM Rule: No npm install on VCAP
 
@@ -134,6 +141,41 @@ pm2 restart har-exp-frontend --update-env
 pm2 restart har-exp-worker --update-env
 pm2 save
 ```
+
+### Local Build for Experimental Support Workbench
+
+Pulling the Support Workbench source is not enough when frontend, backend, or
+runtime code changes. The experimental PM2 apps run compiled output from
+`frontend/dist`, `backend/dist`, and `runtime/dist`, so build locally and copy
+those artifacts to the VM.
+
+Local machine:
+
+```powershell
+cd "C:\Users\ssawane\Documents\Work\claude-code"
+git checkout uat
+git pull origin uat
+npm run test
+npm run build
+tar -czf support-workbench-exp-artifacts.tgz frontend/dist backend/dist runtime/dist package.json package-lock.json frontend/package.json backend/package.json runtime/package.json frontend-server.mjs
+scp support-workbench-exp-artifacts.tgz oracle@celvpvm05798.us.oracle.com:/refresh/home/Downloads/
+```
+
+VM:
+
+```bash
+cd /refresh/home/Downloads/support-workbench-exp
+git fetch origin uat
+git checkout uat
+git pull origin uat
+tar -xzf /refresh/home/Downloads/support-workbench-exp-artifacts.tgz -C /refresh/home/Downloads/support-workbench-exp
+pm2 restart support-workbench-exp-backend --update-env
+pm2 restart support-workbench-exp-frontend --update-env
+pm2 save
+```
+
+If package files changed, also copy the matching local `node_modules` artifact.
+Do not run `npm install` or `npm ci` on the VM.
 
 ### Experimental HAR Backend .env Minimums
 
