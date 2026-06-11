@@ -70,12 +70,17 @@ const SUPPORT_WORKBENCH_URL =
 const SUPPORT_WORKBENCH_FILE_DIRECT_SYNC_LIMIT_BYTES = 256 * 1024 * 1024;
 const SUPPORT_WORKBENCH_ARCHIVE_DIRECT_SYNC_LIMIT_BYTES = 32 * 1024 * 1024;
 const SUPPORT_WORKBENCH_THEME_MESSAGE_TYPE = 'support-workbench:set-theme';
+const SUPPORT_WORKBENCH_FILES_UPLOADED_MESSAGE_TYPE = 'support-workbench:files-uploaded';
 
 type AppPath = '/' | '/docs' | '/docs/mcp';
 type WorkspaceMode = 'analyzer' | 'support';
 type SupportUploadStatus = 'idle' | 'creating' | 'uploading' | 'ready' | 'error';
 type SupportSyncOptions = {
   throwOnError?: boolean;
+};
+type AnalyzerIngestOptions = {
+  activateAnalyzerWorkspace?: boolean;
+  syncToSupportWorkbench?: boolean;
 };
 type CaseFileSummary = {
   name: string;
@@ -136,6 +141,8 @@ const normalizePathname = (pathname: string): AppPath => {
 };
 
 const buildSupportWorkbenchUrl = (baseUrl: string, sessionId: string | null, theme: ThemeMode): string => {
+  const parentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
   try {
     const url = new URL(baseUrl);
     if (sessionId) {
@@ -143,6 +150,9 @@ const buildSupportWorkbenchUrl = (baseUrl: string, sessionId: string | null, the
     }
     url.searchParams.set('embedded', '1');
     url.searchParams.set('theme', theme);
+    if (parentOrigin) {
+      url.searchParams.set('parentOrigin', parentOrigin);
+    }
     return url.toString();
   } catch {
     const separator = baseUrl.includes('?') ? '&' : '?';
@@ -150,6 +160,7 @@ const buildSupportWorkbenchUrl = (baseUrl: string, sessionId: string | null, the
       ...(sessionId ? [`sessionId=${encodeURIComponent(sessionId)}`] : []),
       'embedded=1',
       `theme=${encodeURIComponent(theme)}`,
+      ...(parentOrigin ? [`parentOrigin=${encodeURIComponent(parentOrigin)}`] : []),
     ];
     return `${baseUrl}${separator}${params.join('&')}`;
   }
@@ -195,6 +206,18 @@ const shouldDirectSyncToSupportWorkbench = (
   }
 
   return file.size <= SUPPORT_WORKBENCH_FILE_DIRECT_SYNC_LIMIT_BYTES;
+};
+
+const getWorkbenchUploadedFilesFromMessage = (data: unknown): File[] | null => {
+  if (!data || typeof data !== 'object') return null;
+
+  const message = data as { type?: unknown; files?: unknown };
+  if (message.type !== SUPPORT_WORKBENCH_FILES_UPLOADED_MESSAGE_TYPE || !Array.isArray(message.files)) {
+    return null;
+  }
+
+  const files = message.files.filter((file): file is File => file instanceof File);
+  return files.length === message.files.length ? files : null;
 };
 
 const classifyCaseFileKind = (fileName: string, mediaType?: string): string => {
@@ -687,18 +710,30 @@ const App: React.FC = () => {
 
   // ── Unified uploader callbacks ────────────────────────────────────────────
   /** Called by UnifiedUploader when a HAR file is ready — switches to HAR tool */
-  const handleUnifiedHarUpload = useCallback(async (result: UploadResult, sourceFile: File) => {
-    setActiveWorkspace('analyzer');
-    if (shouldDirectSyncToSupportWorkbench(sourceFile)) {
+  const handleUnifiedHarUpload = useCallback(async (
+    result: UploadResult,
+    sourceFile: File,
+    options: AnalyzerIngestOptions = {}
+  ) => {
+    if (options.activateAnalyzerWorkspace !== false) {
+      setActiveWorkspace('analyzer');
+    }
+    if (options.syncToSupportWorkbench !== false && shouldDirectSyncToSupportWorkbench(sourceFile)) {
       void syncFilesToSupportWorkbench([sourceFile]);
     }
     openHarTab(result, /* switchTool */ true, sourceFile);
   }, [openHarTab, syncFilesToSupportWorkbench]);
 
   /** Called by UnifiedUploader when a console log is ready — switches to Console tool */
-  const handleUnifiedLogUpload = useCallback(async (result: UploadResult, sourceFile: File) => {
-    setActiveWorkspace('analyzer');
-    if (shouldDirectSyncToSupportWorkbench(sourceFile)) {
+  const handleUnifiedLogUpload = useCallback(async (
+    result: UploadResult,
+    sourceFile: File,
+    options: AnalyzerIngestOptions = {}
+  ) => {
+    if (options.activateAnalyzerWorkspace !== false) {
+      setActiveWorkspace('analyzer');
+    }
+    if (options.syncToSupportWorkbench !== false && shouldDirectSyncToSupportWorkbench(sourceFile)) {
       void syncFilesToSupportWorkbench([sourceFile]);
     }
     setActiveTool('console');
@@ -759,12 +794,15 @@ const App: React.FC = () => {
 
   const handleUnifiedBasicUpload = useCallback(async (
     sourceFile: File,
-    classification: UploadFileClassification
+    classification: UploadFileClassification,
+    options: AnalyzerIngestOptions = {}
   ) => {
     if (!isBasicAnalyzerKind(classification.analyzerKind)) return;
 
-    setActiveWorkspace('analyzer');
-    if (shouldDirectSyncToSupportWorkbench(sourceFile, classification)) {
+    if (options.activateAnalyzerWorkspace !== false) {
+      setActiveWorkspace('analyzer');
+    }
+    if (options.syncToSupportWorkbench !== false && shouldDirectSyncToSupportWorkbench(sourceFile, classification)) {
       void syncFilesToSupportWorkbench([sourceFile]);
     }
 
@@ -814,6 +852,61 @@ const App: React.FC = () => {
     await syncFilesToSupportWorkbench(files);
     setActiveWorkspace('support');
   }, [syncFilesToSupportWorkbench]);
+
+  const importWorkbenchUploadedFilesToAnalyzer = useCallback(async (files: File[]) => {
+    const importOptions: AnalyzerIngestOptions = {
+      activateAnalyzerWorkspace: false,
+      syncToSupportWorkbench: false,
+    };
+
+    for (const file of files) {
+      syncedSupportFileKeysRef.current.add(getSupportFileSyncKey(file));
+
+      try {
+        const classification = await classifyUploadFile(file);
+
+        if (classification.analyzerKind === 'har') {
+          const result = await chunkedUploader.uploadFile(file, 'har');
+          await handleUnifiedHarUpload(result, file, importOptions);
+          continue;
+        }
+
+        if (classification.analyzerKind === 'log') {
+          const result = shouldParseConsoleLogLocally(file.size)
+            ? createLocalConsoleLogUploadResult(file)
+            : await chunkedUploader.uploadFile(file, 'log');
+          await handleUnifiedLogUpload(result, file, importOptions);
+          continue;
+        }
+
+        if (isBasicAnalyzerKind(classification.analyzerKind)) {
+          await handleUnifiedBasicUpload(file, classification, importOptions);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('Failed to import Workbench upload into Visual Analysis:', error);
+        setSupportUploadError(`Visual Analysis sync failed for ${file.name}: ${message}`);
+      }
+    }
+  }, [handleUnifiedBasicUpload, handleUnifiedHarUpload, handleUnifiedLogUpload]);
+
+  useEffect(() => {
+    function onSupportWorkbenchMessage(event: MessageEvent) {
+      const files = getWorkbenchUploadedFilesFromMessage(event.data);
+      if (!files) return;
+
+      const frameWindow = supportWorkbenchFrameRef.current?.contentWindow;
+      if (frameWindow && event.source && event.source !== frameWindow) return;
+
+      const expectedOrigin = getSupportWorkbenchMessageTarget(SUPPORT_WORKBENCH_URL);
+      if (expectedOrigin !== '*' && event.origin && event.origin !== expectedOrigin) return;
+
+      void importWorkbenchUploadedFilesToAnalyzer(files);
+    }
+
+    window.addEventListener('message', onSupportWorkbenchMessage);
+    return () => window.removeEventListener('message', onSupportWorkbenchMessage);
+  }, [importWorkbenchUploadedFilesToAnalyzer]);
 
   const handleArchiveAutoOpen = useCallback((tabId: string, entryKey: string) => {
     setBasicTabs(prev => prev.map(tab =>

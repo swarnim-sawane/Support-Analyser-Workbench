@@ -2,6 +2,7 @@ import React from 'react';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import { chunkedUploader } from './services/chunkedUploader';
 
 type UnifiedUploaderMockProps = {
   onHarFileUpload?: (result: {
@@ -781,9 +782,14 @@ describe('App documentation navigation', () => {
 
     expect(visualAnalysis).not.toBeVisible();
     expect(screen.getByRole('region', { name: /ai diagnosis/i })).toBeVisible();
+    const expectedFrameUrl = new URL('http://localhost:4173/');
+    expectedFrameUrl.searchParams.set('sessionId', 'support-session-1');
+    expectedFrameUrl.searchParams.set('embedded', '1');
+    expectedFrameUrl.searchParams.set('theme', 'light');
+    expectedFrameUrl.searchParams.set('parentOrigin', window.location.origin);
     expect(screen.getByTitle(/ai diagnosis/i)).toHaveAttribute(
       'src',
-      'http://localhost:4173/?sessionId=support-session-1&embedded=1&theme=light'
+      expectedFrameUrl.toString()
     );
     expect(screen.getByRole('button', { name: /visual analysis/i })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: /ai diagnosis/i })).toHaveAttribute('aria-pressed', 'true');
@@ -851,6 +857,59 @@ describe('App documentation navigation', () => {
       { type: 'support-workbench:set-theme', theme: 'dark' },
       'http://localhost:4173'
     );
+  });
+
+  it('imports files uploaded inside embedded AI Diagnosis into Visual Analysis without echoing them back', async () => {
+    const user = userEvent.setup();
+    const uploadSpy = vi.spyOn(chunkedUploader, 'uploadFile').mockResolvedValue({
+      success: true,
+      fileId: 'workbench-har-id',
+      jobId: 'workbench-har-job-id',
+      fileName: 'workbench-upload.har',
+      fileSize: 256,
+      hash: 'workbench-har-hash',
+      message: 'ok',
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /load mock har/i }));
+    await user.click(screen.getByRole('button', { name: /ai diagnosis/i }));
+
+    const attachmentCallsBefore = vi.mocked(globalThis.fetch).mock.calls.filter(([input]) =>
+      String(input).includes('/api/support-workbench/session/support-session-1/attachments')
+    ).length;
+    const aiFrame = screen.getByTitle(/ai diagnosis/i) as HTMLIFrameElement;
+    const sourceFile = new File(
+      ['{"log":{"entries":[{"startedDateTime":"2026-01-01T00:00:02.000Z","request":{},"response":{}}]}}'],
+      'workbench-upload.har',
+      { type: 'application/json' }
+    );
+
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'support-workbench:files-uploaded',
+            sessionId: 'support-session-1',
+            files: [sourceFile],
+            attachments: [{ id: 'attachment-workbench', originalName: 'workbench-upload.har' }],
+          },
+          origin: 'http://localhost:4173',
+          source: aiFrame.contentWindow as MessageEventSource,
+        })
+      );
+    });
+
+    await waitFor(() => expect(uploadSpy).toHaveBeenCalledWith(sourceFile, 'har'));
+    await user.click(screen.getByRole('button', { name: /visual analysis/i }));
+
+    expect(getHarTab('workbench-upload.har')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /analysis toolbar/i })).toHaveTextContent('2 files');
+    const attachmentCallsAfter = vi.mocked(globalThis.fetch).mock.calls.filter(([input]) =>
+      String(input).includes('/api/support-workbench/session/support-session-1/attachments')
+    ).length;
+    expect(attachmentCallsAfter).toBe(attachmentCallsBefore);
+    uploadSpy.mockRestore();
   });
 
   it('places Analyzer, HAR Compare, and HAR Sanitizer in the tools menu without showing a workspace drawer', async () => {
