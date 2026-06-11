@@ -118,6 +118,13 @@ By default, the backend expects:
 - Redis at `localhost:6379`
 - Backend API on `http://localhost:4000`
 - Frontend on `http://localhost:3000`
+- Embedded AI Diagnosis frontend on `http://localhost:4173`
+- Embedded AI Diagnosis backend on `http://localhost:4317`
+
+AI Diagnosis is provided by the separate `support-workbench` repo. If that app
+is not running, the Visual Analysis shell still starts, but the AI Diagnosis
+iframe will show a browser connection error and `/api/support-workbench/*`
+requests will return a `503`.
 
 ### Install dependencies
 
@@ -174,6 +181,41 @@ Why this matters:
 - File uploads are queued
 - HAR parsing and console log processing are completed by the worker
 - Without the worker, uploads may appear to succeed but stay stuck in processing
+
+### Start everything from the HAR repo
+
+The HAR repo can start the HAR frontend, backend, worker, and local AI
+Diagnosis services together:
+
+```powershell
+npm run dev:all
+```
+
+If your local Support Workbench checkout is at
+`C:\Users\ssawane\Documents\Work\claude-code`, `dev:all` auto-detects it and
+starts both Support Workbench services:
+
+- `npm run dev:backend`
+- `npm run dev:frontend`
+
+For another local checkout path, set `SUPPORT_WORKBENCH_DIR` before running
+`dev:all`:
+
+```powershell
+$env:SUPPORT_WORKBENCH_DIR="C:\Users\ssawane\Documents\Work\claude-code"
+npm run dev:all
+```
+
+If that repo uses different local commands, override either side:
+
+```powershell
+$env:SUPPORT_WORKBENCH_BACKEND_COMMAND="npm run dev:backend"
+$env:SUPPORT_WORKBENCH_FRONTEND_COMMAND="npm run dev:frontend"
+npm run dev:all
+```
+
+For a repo that has its own combined command, set `SUPPORT_WORKBENCH_DEV_COMMAND`
+instead and `dev:all` will run that single command.
 
 ### Local AI notes
 

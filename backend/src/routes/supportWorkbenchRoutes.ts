@@ -7,6 +7,16 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const DEFAULT_SUPPORT_WORKBENCH_API_URL = 'http://localhost:4317';
 
+class SupportWorkbenchUnavailableError extends Error {
+  constructor(
+    public readonly supportWorkbenchApiUrl: string,
+    public readonly cause: unknown
+  ) {
+    super('Support Workbench backend is not reachable');
+    this.name = 'SupportWorkbenchUnavailableError';
+  }
+}
+
 function supportWorkbenchApiUrl(): string {
   return (process.env.SUPPORT_WORKBENCH_API_URL || DEFAULT_SUPPORT_WORKBENCH_API_URL).replace(/\/$/, '');
 }
@@ -36,9 +46,31 @@ async function relayWorkbenchResponse(response: Awaited<ReturnType<typeof fetch>
   res.status(response.status).send(body);
 }
 
+async function fetchSupportWorkbench(path: string, init: Parameters<typeof fetch>[1]) {
+  const baseUrl = supportWorkbenchApiUrl();
+  try {
+    return await fetch(`${baseUrl}${path}`, init);
+  } catch (error) {
+    throw new SupportWorkbenchUnavailableError(baseUrl, error);
+  }
+}
+
+function handleSupportWorkbenchProxyError(error: unknown, res: Response, next: NextFunction) {
+  if (error instanceof SupportWorkbenchUnavailableError) {
+    res.status(503).json({
+      error: error.message,
+      supportWorkbenchApiUrl: error.supportWorkbenchApiUrl,
+      hint: 'Start the Support Workbench backend or set SUPPORT_WORKBENCH_API_URL to the running AI Diagnosis backend.',
+    });
+    return;
+  }
+
+  next(error);
+}
+
 router.post('/session', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const response = await fetch(`${supportWorkbenchApiUrl()}/api/session`, {
+    const response = await fetchSupportWorkbench('/api/session', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,7 +84,7 @@ router.post('/session', async (req: Request, res: Response, next: NextFunction) 
 
     await relayWorkbenchResponse(response, res);
   } catch (error) {
-    next(error);
+    handleSupportWorkbenchProxyError(error, res, next);
   }
 });
 
@@ -65,7 +97,7 @@ router.post('/session/:sessionId/attachments', (req: Request, res: Response, nex
       return;
     }
 
-    void handleAttachmentUpload(req, res).catch(next);
+    void handleAttachmentUpload(req, res).catch((error) => handleSupportWorkbenchProxyError(error, res, next));
   });
 });
 
@@ -86,14 +118,11 @@ async function handleAttachmentUpload(req: Request, res: Response) {
     );
   }
 
-  const response = await fetch(
-    `${supportWorkbenchApiUrl()}/api/session/${encodeURIComponent(req.params.sessionId)}/attachments`,
-    {
-      method: 'POST',
-      headers: cookieHeader(req),
-      body: formData,
-    }
-  );
+  const response = await fetchSupportWorkbench(`/api/session/${encodeURIComponent(req.params.sessionId)}/attachments`, {
+    method: 'POST',
+    headers: cookieHeader(req),
+    body: formData,
+  });
 
   await relayWorkbenchResponse(response, res);
 }

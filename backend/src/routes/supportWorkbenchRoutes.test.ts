@@ -22,6 +22,30 @@ afterEach(async () => {
 });
 
 describe('supportWorkbenchRoutes', () => {
+  it('returns a clear 503 when the support workbench backend is unavailable', async () => {
+    const closedServer = await listen(createServer());
+    const closedUrl = serverUrl(closedServer);
+    await closeServer(closedServer);
+    servers.splice(servers.indexOf(closedServer), 1);
+    vi.stubEnv('SUPPORT_WORKBENCH_API_URL', closedUrl);
+    const appServer = await listen(createHarProxyServer());
+
+    const response = await fetch(`${serverUrl(appServer)}/api/support-workbench/session`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId: 'support-session-1' }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(await response.json()).toMatchObject({
+      error: 'Support Workbench backend is not reachable',
+      supportWorkbenchApiUrl: closedUrl,
+    });
+  });
+
   it('proxies session creation and relays the owner cookie', async () => {
     let captured: CapturedRequest | null = null;
     const supportServer = await listen(createServer(async (req, res) => {
