@@ -87,11 +87,146 @@ flowchart LR
 ### Prerequisites
 
 - Node.js
+- Rancher Desktop, Docker Desktop, or another local container runtime
 - MongoDB
 - Redis
 - Optional: Qdrant for AI/vector features
 - Optional for video: `ffmpeg` and `ffprobe`
 - Optional for local transcription fallback: Python + OpenAI Whisper
+
+### Local infrastructure with Rancher Desktop
+
+For a new local machine, the simplest setup is to run MongoDB, Redis, and optional Qdrant as containers through Rancher Desktop.
+
+In Rancher Desktop, use either:
+
+- **dockerd/moby** with the `docker` CLI, or
+- **containerd** with the `nerdctl` CLI.
+
+The commands below use `docker`. If your Rancher Desktop installation exposes `nerdctl` instead, replace `docker` with `nerdctl`.
+
+Create a shared network and persistent volumes:
+
+```powershell
+docker network create support-analyzer-net
+docker volume create support-analyzer-mongo
+docker volume create support-analyzer-redis
+docker volume create support-analyzer-qdrant
+```
+
+Start MongoDB:
+
+```powershell
+docker run -d `
+  --name support-analyzer-mongo `
+  --network support-analyzer-net `
+  -p 27017:27017 `
+  -v support-analyzer-mongo:/data/db `
+  mongo:7
+```
+
+Start Redis with append-only persistence:
+
+```powershell
+docker run -d `
+  --name support-analyzer-redis `
+  --network support-analyzer-net `
+  -p 6379:6379 `
+  -v support-analyzer-redis:/data `
+  redis:7-alpine redis-server --appendonly yes
+```
+
+Optional: start Qdrant for vector/AI features:
+
+```powershell
+docker run -d `
+  --name support-analyzer-qdrant `
+  --network support-analyzer-net `
+  -p 6333:6333 `
+  -v support-analyzer-qdrant:/qdrant/storage `
+  qdrant/qdrant:latest
+```
+
+Verify containers are running:
+
+```powershell
+docker ps --filter "name=support-analyzer"
+```
+
+Verify MongoDB:
+
+```powershell
+docker exec support-analyzer-mongo mongosh --eval "db.runCommand({ ping: 1 })"
+Test-NetConnection 127.0.0.1 -Port 27017
+```
+
+Verify Redis:
+
+```powershell
+docker exec support-analyzer-redis redis-cli ping
+Test-NetConnection 127.0.0.1 -Port 6379
+```
+
+Verify Qdrant if enabled:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:6333/collections
+```
+
+Create `backend/.env` for the Rancher Desktop setup:
+
+```env
+PORT=4000
+MONGODB_URL=mongodb://127.0.0.1:27017/har-analyzer
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+UPLOAD_DIR=./uploads
+PROCESSED_DIR=./processed
+QDRANT_URL=http://127.0.0.1:6333
+
+VIDEO_FAST_MODE_ENABLED=true
+VIDEO_FAST_TRANSCRIPT_MAX_SECONDS=180
+VIDEO_FAST_TRANSCRIPT_WINDOW_SECONDS=45
+VIDEO_SCENE_DETECT_FPS=1
+VIDEO_TRANSCRIPT_CACHE_ENABLED=true
+```
+
+If you do not run Qdrant locally, leave `QDRANT_URL` unset. The backend treats Qdrant as optional.
+
+Start the application after MongoDB and Redis are healthy:
+
+```powershell
+npm run dev:all
+```
+
+Useful infrastructure commands:
+
+```powershell
+# Stop local infra
+docker stop support-analyzer-mongo support-analyzer-redis support-analyzer-qdrant
+
+# Start it again
+docker start support-analyzer-mongo support-analyzer-redis support-analyzer-qdrant
+
+# See logs
+docker logs support-analyzer-mongo --tail 80
+docker logs support-analyzer-redis --tail 80
+docker logs support-analyzer-qdrant --tail 80
+
+# Remove containers but keep data volumes
+docker rm -f support-analyzer-mongo support-analyzer-redis support-analyzer-qdrant
+
+# Remove data volumes only when you intentionally want a clean database
+docker volume rm support-analyzer-mongo support-analyzer-redis support-analyzer-qdrant
+```
+
+Troubleshooting:
+
+- If the backend cannot connect to MongoDB, check `Test-NetConnection 127.0.0.1 -Port 27017` and confirm `MONGODB_URL` uses `127.0.0.1`, not a container-only hostname.
+- If Redis connection fails, confirm `docker exec support-analyzer-redis redis-cli ping` returns `PONG`.
+- If ports are already in use, stop the conflicting local service or remap the container port and update `backend/.env`.
+- If Rancher Desktop is using Kubernetes-only mode and no Docker-compatible CLI is available, enable the Docker-compatible engine or use `nerdctl` with the same image, port, and volume options.
+- If uploads stay stuck in processing, the backend worker is not running or cannot reach Redis.
 
 Install frontend dependencies:
 
